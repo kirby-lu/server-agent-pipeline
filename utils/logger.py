@@ -49,7 +49,7 @@ class LLMClient:
     支持：普通补全 / 代码生成（带语法验证） / JSON 生成（带 Schema 验证）
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-20250514", max_retries: int = 3):
+    def __init__(self, model: str = "deepseek-chat", max_retries: int = 3):
         self.model = model
         self.max_retries = max_retries
         self.logger = setup_logger("llm_client")

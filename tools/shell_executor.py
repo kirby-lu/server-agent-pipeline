@@ -175,6 +175,15 @@ class UVManager:
 
     def install_requirements(self, requirements_file: Path) -> None:
         """安装 requirements.txt"""
+        logger.info(f"  追加微服务依赖: {requirements_file}")
+        # 追加依赖
+        result = self.executor.run(
+            f"echo 'Flask==3.1.3' >> {requirements_file}",
+            f"echo 'fastapi==0.135.1' >> {requirements_file}",
+            timeout=1200,  # 依赖安装可能很慢
+        )
+        result.raise_if_failed("追加微服务以来失败")
+        
         logger.info(f"  安装依赖: {requirements_file}")
         result = self.executor.run(
             f"uv pip install -r {requirements_file} --python {self.python_path}",

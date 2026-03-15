@@ -82,16 +82,16 @@ class OrchestratorAgent:
         # (step_id, phase, description, is_checkpoint_after)
         ("step_01", 1, "克隆 GitLab 仓库",                False),
         ("step_02", 1, "创建 uv 虚拟环境并安装依赖",       False),
-        ("step_03", 1, "LLM 解析 README 并下载权重/数据集", False),
-        ("step_04", 1, "运行 single_inference.py 验证原型", True),   # ← 检查点1
-        # ("step_05", 2, "LLM 重构为四标准函数",              False),
-        # ("step_06", 2, "LLM 生成 request/response.json",   False),
-        # ("step_07", 2, "LLM 融合生成 server_refactor.py",  False),
-        # ("step_08", 2, "自动冒烟测试",                      True),   # ← 检查点2
+        ("step_03", 1, "LLM 解析 README 并下载权重/数据集", True),       # ← 检查点
+        ("step_04", 1, "运行 single_inference.py 验证原型", True),      # ← 检查点
+        ("step_05", 2, "LLM 重构为四个标准函数",              True),     # ← 检查点
+        ("step_06", 2, "LLM 生成 request/response.json",   True),     # ← 检查点
+        ("step_07", 2, "LLM 融合生成 server_refactor.py",  True),
+        ("step_08", 2, "自动冒烟测试",                      True),   # ← 检查点
         # ("step_09", 3, "LLM 改造精度测试脚本",              False),
-        # ("step_10", 3, "效率测试（QPS/延迟/资源）",          True),   # ← 检查点3
+        # ("step_10", 3, "效率测试（QPS/延迟/资源）",          True),   # ← 检查点
         # ("step_11", 4, "LLM 生成四个 Docker Shell 脚本",   False),
-        # ("step_12", 4, "执行容器启动并验证服务",             True),   # ← 检查点4
+        # ("step_12", 4, "执行容器启动并验证服务",             True),   # ← 检查点
         # ("step_13", 4, "LLM 生成接口文档",                  False),
     ]
 

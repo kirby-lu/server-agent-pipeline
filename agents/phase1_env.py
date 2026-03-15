@@ -165,7 +165,8 @@ class Phase1EnvAgent:
             resources_info = self.llm.generate_json(system_prompt, user_prompt)
         except Exception as e:
             logger.warning(f"  LLM 解析 README 失败: {e}，跳过资源下载")
-            return {"resources_downloaded": False, "reason": str(e)}        # TODO: 报错之后需要停止，但是目前还会继续执行
+            raise RuntimeError(f"资源下载失败，具体原因为:{str(e)}")    # 通过抛出异常来停止后续任务
+            # return {"resources_downloaded": False, "reason": str(e)}        
         resources = resources_info.get("resources", [])
         logger.info(f"  [Observe] LLM 识别到 {len(resources)} 个资源")
 
@@ -234,6 +235,6 @@ class Phase1EnvAgent:
         logger.info("  [Observe] ✓ 原型验证通过")
         return {
             "prototype_validated": True,
-            "stdout_tail": result.stdout[-500:],
+            "stdout_tail": result.stdout[-500:],    # 打印的是single_inference.py中print的东西
             "elapsed": result.elapsed,
         }

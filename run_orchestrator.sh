@@ -1,5 +1,5 @@
 export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
-export ANTHROPIC_API_KEY=${sk-800259e420324b48977d7c6072a100f4}
+export ANTHROPIC_API_KEY=sk-5da256b6d34c41dd821b65ef4162ab25
 
 source .venv/bin/activate
 uv run orchestrator.py \
