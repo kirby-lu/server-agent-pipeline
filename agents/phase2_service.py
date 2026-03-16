@@ -254,7 +254,7 @@ class Phase2ServiceAgent:
         # single_inference_refactor = project_dir / "single_inference_refactor.py"
         original_code = (project_dir / "single_inference_refactor.py").read_text(encoding="utf-8")
         req_path = project_dir / "request.json"
-        self.llm.generate_json(
+        req_result = self.llm.generate_json(
             system_prompt=JSON_SYSTEM_PROMPT,
             user_prompt=get_request_json_user_prompt(original_code),
             output_path=req_path,
@@ -264,17 +264,19 @@ class Phase2ServiceAgent:
         logger.info("  [Act] 生成 response.json")
         resp_path = project_dir / "response.json"
         req_content = req_path.read_text(encoding="utf-8")
-        self.llm.generate_json(
+        resp_result = self.llm.generate_json(
             system_prompt=JSON_SYSTEM_PROMPT,
             user_prompt=get_response_json_user_prompt(original_code,req_content),
             output_path=resp_path,
         )
 
-        logger.info(f"  [Observe] ✓ request.json: {req_path}")
-        logger.info(f"  [Observe] ✓ response.json: {resp_path}")
+        logger.info(f"  [Observe] ✓ request.json: {req_path}, request : {req_result}")
+        logger.info(f"  [Observe] ✓ response.json: {resp_path}, response : {resp_result}")
         return {
             "request_json_path": str(req_path),
+            "request_json_data": req_result,
             "response_json_path": str(resp_path),
+            "response_json_data": resp_result,
         }
 
     # ── 步骤7：生成 FastAPI 服务 ─────────────────
@@ -314,8 +316,9 @@ class Phase2ServiceAgent:
         """启动服务 → 启动服务 → 执行测试"""
         project_dir = Path(self.state.get_project_dir())
         venv_python = self.state.get_venv_python()
+        ip = self.config.server_ip
         port = self.config.server_port
-        server_url = f"http://localhost:{port}/infer"
+        server_url = f"http://{ip}:{port}/infer"
         request_json = (project_dir / "request.json").read_text(encoding="utf-8")
 
         # ── 8a: 启动服务 ──

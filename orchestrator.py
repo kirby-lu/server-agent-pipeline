@@ -47,8 +47,9 @@ class PipelineConfig:
     max_retries: int = 3                     # 每步最大重试次数
     human_in_the_loop: bool = True           # 是否启用人工检查点
     gpu_available: bool = False              # 是否有 GPU
+    server_ip: str = "localhost"             # 服务端口
     server_port: int = 8080                  # 服务端口
-    docker_image_name: str = ""             # Docker 镜像名（空则自动生成）
+    docker_image_name: str = ""              # Docker 镜像名（空则自动生成）
 
 
 @dataclass
@@ -261,6 +262,7 @@ if __name__ == "__main__":
     parser.add_argument("--project-name",  required=True,  help="项目名称")
     parser.add_argument("--work-dir",      default="/tmp/ml_pipeline")
     parser.add_argument("--model",         default="deepseek-chat")
+    parser.add_argument("--ip",            default="localhost", type=str)
     parser.add_argument("--port",          default=8080, type=int)
     parser.add_argument("--gpu",           action="store_true")
     parser.add_argument("--no-human",      action="store_true", help="关闭人工检查点（CI 模式）")
@@ -272,6 +274,7 @@ if __name__ == "__main__":
         project_name=args.project_name,
         work_dir=args.work_dir,
         llm_model=args.model,
+        server_ip=args.ip,
         server_port=args.port,
         gpu_available=args.gpu,
         human_in_the_loop=not args.no_human,

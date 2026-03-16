@@ -1,0 +1,1 @@
+docker import base_image.tar base_image:v1.0
