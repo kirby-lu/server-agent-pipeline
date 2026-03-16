@@ -186,14 +186,19 @@ class Phase4DockerAgent:
         )
         save_shell(stop_server_shell_path, run_stop_server)
         
-        info = {"run_load_image.sh": load_image_template,
-                "run_create_image.sh": create_docker_template,
-                "run_start_server.sh": run_start_server,
-                "run_stop_server.sh":run_stop_server}
+        # shell_info = {"run_load_image.sh": load_image_template,
+        #             "run_create_image.sh": create_docker_template,
+        #             "run_start_server.sh": run_start_server,
+        #             "run_stop_server.sh":run_stop_server}
         
-        logger.info(f"  [Observe] ✓ info")
+        shell_path = {"run_load_image.sh": str(load_image_shell_path.resolve()),
+                    "run_create_image.sh": str(create_docker_shell_path.resolve()),
+                    "run_start_server.sh": str(start_server_shell_path.resolve()),
+                    "run_stop_server.sh":str(stop_server_shell_path.resolve())}
+        
+        logger.info(f"  [Observe] ✓ {shell_path}")
 
-        return info
+        return {"docker_scripts":shell_path}
 
     # ── 步骤12：执行容器启动并验证 ────────────────
 
