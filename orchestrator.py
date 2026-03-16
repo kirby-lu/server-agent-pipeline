@@ -92,7 +92,7 @@ class OrchestratorAgent:
         ("step_08", 2, "自动冒烟测试",                      True),   # ← 检查点
         ("step_09", 3, "LLM 改造精度测试脚本",              True),
         # ("step_10", 3, "效率测试（QPS/延迟/资源）",          True),   # ← 检查点
-        # ("step_11", 4, "重构四个Docker Shell脚本",   False),
+        ("step_11", 4, "重构四个Docker Shell脚本",   False),
         # ("step_12", 4, "执行容器启动并验证服务",             True),   # ← 检查点
         ("step_13", 4, "LLM 生成接口文档",                  False),
     ]
