@@ -61,7 +61,7 @@ class PipelineResult:
     request_json: str = ""
     response_json: str = ""
     server_py: str = ""
-    precision_test_py: str = ""
+    server_precision: str = ""
     perf_report: str = ""
     docker_scripts: dict[str, str] = field(default_factory=dict)
     api_doc: str = ""
@@ -239,7 +239,7 @@ class OrchestratorAgent:
         self.result.request_json   = self.state.get("request_json_path", "")
         self.result.response_json  = self.state.get("response_json_path", "")
         self.result.server_py      = self.state.get("server_refactor_path", "")
-        self.result.precision_test_py = self.state.get("precision_test_refactor_path", "")
+        self.result.server_precision = self.state.get("server_precision", "")
         self.result.perf_report    = self.state.get("perf_report_path", "")
         self.result.docker_scripts = self.state.get("docker_scripts", {})
         self.result.api_doc        = self.state.get("api_doc_path", "")

@@ -70,6 +70,19 @@ PRECISION_REFACTOR_USER = """
 请输出完整的重构后脚本，并在关键改动处附加注释，说明替换或删除的原因。
 """
 
+REGENERATE_USER_PROMPT = """
+    请对以下代码进行审查和修复：
+    代码审查请求：
+    之前生成的代码存在执行错误，请仔细检查代码逻辑，并根据错误信息重新生成正确的版本。
+    相关代码：{val_precision}
+    错误信息：{error_info}
+    要求：
+    - 分析错误原因，定位问题所在
+    - 修复代码中的问题
+    - 重新生成完整、可运行的代码
+    - 确保代码质量，避免类似错误再次发生
+    请提供修复后的完整代码。
+"""
 
 @dataclass
 class PerformanceReport:
@@ -191,15 +204,31 @@ class Phase3EvalAgent:
         executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
         result = executor.run_python(output_path, timeout=300)
         if not result.success:
-            # 将错误输出上报，供 Orchestrator 决策
-            raise RuntimeError(
-                f"val_precision_refactor.py 执行失败 (code={result.returncode})\n"
-                f"stderr: {result.stderr[-2000:]}\n"
-                f"stdout: {result.stdout[-1000:]}"
+            logger.info(f"  [Observe] ✖ error is {result.stderr[-2000:]}\n")
+            # TODO: 如果出现问题的话，就再给大模型一次机会，让其重新生成，但是需要将报错信息给他！
+            logger.info("  [Act] 重新调用 LLM 改造精度测试脚本")
+            self.llm.generate_python_code(
+                system_prompt=PRECISION_REFACTOR_SYSTEM,
+                user_prompt=REGENERATE_USER_PROMPT.format(
+                            val_precision = val_precision,
+                            error_info = result.stderr[-2000:]),
+                output_path=output_path,
             )
+            logger.info(f"  [Observe] ✓ val_precision_refactor.py: {output_path}")
+        
+            logger.info(f"  [Act] 重新验证服务精度")
+            executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
+            result = executor.run_python(output_path, timeout=300)
+            if not result.success:
+                # 将错误输出上报，供 Orchestrator 决策
+                raise RuntimeError(
+                    f"val_precision_refactor.py 执行失败 (code={result.returncode})\n"
+                    f"stderr: {result.stderr[-2000:]}\n"
+                    f"stdout: {result.stdout[-1000:]}"
+                )
         logger.info(f"  [Observe] ✓ 验证服务精度完成，服务精度为:{result.stdout[-500:]}")
         
-        return {"precision_test_refactor_path": str(output_path)}
+        return {"server_precision": result.stdout[-1000:]}
 
     # ── 步骤10：效率测试 ──────────────────────────
 
