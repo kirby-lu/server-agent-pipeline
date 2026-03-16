@@ -146,6 +146,8 @@ class OrchestratorAgent:
                 approved = self._human_checkpoint(step_id, description)
                 if not approved:    # TODO: 即使被暂停了，但是后续依然在此停留，重新执行
                     self.result.status = PipelineStatus.PAUSED
+                    self.state.set_step_status(step_id, PipelineStatus.PAUSED)
+                
                     logger.warning(f"Pipeline 在检查点 {step_id} 被人工暂停")
                     return self.result
 
@@ -210,7 +212,6 @@ class OrchestratorAgent:
             print("  执行结果摘要:")
             for k, v in step_result.items():
                 print(f"    {k}: {v}")
-        print()
 
         while True:
             answer = input("  是否通过此检查点继续执行？[y/n/s(跳过此步)]: ").strip().lower()

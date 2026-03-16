@@ -17,6 +17,7 @@ class StepStatus(str, Enum):
     RUNNING  = "running"
     SUCCESS  = "success"
     FAILED   = "failed"
+    PAUSED   = "paused"       # 等待人工确认
     SKIPPED  = "skipped"
 
 
