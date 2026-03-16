@@ -11,6 +11,8 @@ import socket
 import time
 from pathlib import Path
 from typing import Any
+from string import Template
+import os
 
 from tools.shell_executor import ShellExecutor
 from utils.logger import setup_logger, LLMClient
@@ -131,56 +133,67 @@ class Phase4DockerAgent:
 
     def _step11_generate_docker_scripts(self) -> dict:
         project_dir = Path(self.state.get_project_dir())
-        port = self.config.server_port
+        server_ip = self.config.server_ip
+        server_port = self.config.server_port
+        host_port = self.config.host_port
+        project_name = self.config.project_name
+        
+        def save_shell(shell_path, content):
+            # 写入新文件
+            with open(str(shell_path), 'w') as f:
+                f.write(content)
+            # 添加可执行权限
+            os.chmod(str(shell_path), 0o755)
+            
+        # 读取加载镜像
+        load_image_shell_path =  project_dir / "../" / "run_load_image.sh"
+        with open('templates/run_load_image.sh', 'r') as f:
+            load_image_template = f.read()
+        save_shell(load_image_shell_path, load_image_template)
 
-        # 读取 requirements.txt
-        req_file = project_dir / "requirements.txt"
-        requirements = req_file.read_text(encoding="utf-8") if req_file.exists() else ""
-
-        # 读取模板（若存在）
-        templates_dir = project_dir / "docker_templates"
-        template_content = ""
-        if templates_dir.exists():
-            for tmpl in templates_dir.glob("*.sh"):
-                template_content += f"\n# {tmpl.name}:\n"
-                template_content += tmpl.read_text(encoding="utf-8")[:500]
-
-        gpu_flag = "--gpus all" if self.config.gpu_available else ""
-        gpu_create_flag = "添加 --gpus all 参数启用 GPU" if self.config.gpu_available else "不需要 GPU 参数"
-
-        logger.info("  [Act] 调用 LLM 生成四个 Docker Shell 脚本")
-        raw = self.llm.complete(
-            system_prompt=DOCKER_SCRIPTS_SYSTEM,
-            user_prompt=DOCKER_SCRIPTS_USER.format(
-                project_name=self.config.project_name,
-                image_name=self.image_name,
-                container_name=self.container_name,
-                port=port,
-                gpu_flag=gpu_flag,
-                gpu_create_flag=gpu_create_flag,
-                requirements=requirements[:2000],
-                template_content=template_content or "（无模板，请自行生成）",
-            ),
+        # 读取shell模板，然后填充变量
+        create_docker_shell_path =  project_dir / "../" / "run_create_image.sh"
+        with open('templates/run_create_image.sh', 'r') as f:
+            template = f.read()
+            
+        template = Template(template)
+        create_docker_template = template.substitute(
+            HOST_PORT=host_port,
+            SERVER_PORT=server_port,
+            TASK_NAME=project_name
         )
+        save_shell(create_docker_shell_path, create_docker_template)
+    
+        
+        # 读取启动服务模板，然后填充变量
+        start_server_shell_path = project_dir / "../" / "run_start_server.sh"
+        with open('templates/run_start_server.sh', 'r') as f:
+            template = f.read()
+        template = Template(template)
+        run_start_server = template.substitute(
+            TASK_NAME=project_name
+        )
+        save_shell(start_server_shell_path, run_start_server)
+        
+        # 读取停止服务模板，然后填充变量
+        stop_server_shell_path = project_dir / "../" / "run_stop_server.sh"
+        with open('templates/run_stop_server.sh', 'r') as f:
+            template = f.read()
+            
+        template = Template(template)
+        run_stop_server = template.substitute(
+            TASK_NAME=project_name
+        )
+        save_shell(stop_server_shell_path, run_stop_server)
+        
+        info = {"run_load_image.sh": load_image_template,
+                "run_create_image.sh": create_docker_template,
+                "run_start_server.sh": run_start_server,
+                "run_stop_server.sh":run_stop_server}
+        
+        logger.info(f"  [Observe] ✓ info")
 
-        # 解析多文件输出
-        scripts = self._parse_multifile_output(raw)
-        expected = ["run_load_image.sh", "run_create_docker.sh",
-                    "run_start_server.sh", "run_stop_server.sh"]
-
-        script_paths = {}
-        for name in expected:
-            content = scripts.get(name, "")
-            if not content:
-                logger.warning(f"  LLM 未生成 {name}，使用默认模板")
-                content = self._default_script(name)
-            path = project_dir / name
-            path.write_text(content, encoding="utf-8")
-            path.chmod(0o755)
-            script_paths[name] = str(path)
-            logger.info(f"  [Observe] ✓ {name}: {path}")
-
-        return {"docker_scripts": script_paths}
+        return info
 
     # ── 步骤12：执行容器启动并验证 ────────────────
 

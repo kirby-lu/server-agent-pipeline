@@ -5,5 +5,5 @@ source .venv/bin/activate
 uv run orchestrator.py \
         --gitlab-url https://github.com/kirby-lu/yolov8.git \
         --work-dir /Users/penglu/Desktop/ \
-        --project-name YOLOv8-server
+        --project-name YOLOv8-server    # 即使本地项目名称，也是docker容器的名称
         
