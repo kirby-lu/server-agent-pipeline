@@ -81,8 +81,8 @@ def get_request_json_user_prompt(original_code):
         核心要求：
             - 不可变量：保持外层的 requestId（用于日志追踪）和内层的 body（业务负荷）不动。
             - 增量设计：分析original_code中的pre_process 、process和post_process的输入需求。
-                    如果除了resourceUrl(表示输入资源的字段名称)还需要其他控制变量（device_id除外、模型名称,
-                    请在 body 下方进行增量定义,请确保不同变量名的含义不要出现重复
+                    如果除了resourceUrl(表示输入资源的字段名称,其值请填充original_code中真实的数据),还需要其他控制变量(device_id除外、模型名称),
+                    请在 body 下方进行增量定义,请确保不同变量名的含义不要出现重复，
             - 逻辑闭环：设计的参数不应涵盖原始输入数据的标准化、格式转换等操作的信息 
             - 请求模板：{template},requestId表示每个请求唯一的uuid字符传
             - original_code为:{original_code}
@@ -158,31 +158,20 @@ def get_server_user_prompt(request,response,single_inference_refactor, server,
 SMOKE_TEST_SYSTEM_PROMPT = """你是 QA 工程师，专门编写 HTTP 服务的冒烟测试脚本。
 输出完整的 Python 测试脚本，不要有任何额外解释。"""
 
-SMOKE_TEST_USER_TEMPLATE = """基于以下信息，生成冒烟测试脚本 smoke_test.py。
-
-服务地址: {server_url}
-request.json:
-```json
-{request_json}
-```
-response.json（预期格式）:
-```json
-{response_json}
-```
-
-测试脚本要求：
-1. 测试 GET /health — 期望 200 且有 status 字段
-2. 测试 POST /predict — 发送 request.json 内容，验证：
-   - HTTP 状态码 200
-   - 响应是合法 JSON
-   - 响应包含 response.json 中的所有顶层 key
-3. 打印详细的测试结果（PASS/FAIL + 响应内容）
-4. 全部通过时 sys.exit(0)，任一失败时 sys.exit(1)
-5. 支持命令行参数 --url 覆盖服务地址
-
-输出完整的 smoke_test.py 脚本。"""
-
-
+def get_smoke_test_user_template(request_json, server_url):
+    # 如果 request_json 是字符串，先解析
+    if isinstance(request_json, str):
+        request_data = json.loads(request_json)
+    else:
+        request_data = request_json
+    
+    # 生成新的 curl 命令
+    curl_cmd = f"""curl -X POST "{server_url}" \\
+    -H "Content-Type: application/json" \\
+    -d '{json.dumps(request_data, ensure_ascii=False)}'"""
+    
+    return curl_cmd
+    
 # ─────────────────────────────────────────────
 #  Phase 2 Agent
 # ─────────────────────────────────────────────
@@ -322,29 +311,14 @@ class Phase2ServiceAgent:
     # ── 步骤8：冒烟测试 ──────────────────────────
 
     def _step08_smoke_test(self) -> dict:
-        """启动服务 → LLM 生成冒烟测试脚本 → 执行测试"""
+        """启动服务 → 启动服务 → 执行测试"""
         project_dir = Path(self.state.get_project_dir())
         venv_python = self.state.get_venv_python()
         port = self.config.server_port
-        server_url = f"http://localhost:{port}"
-
-        # ── 8a: 生成冒烟测试脚本 ──
+        server_url = f"http://localhost:{port}/infer"
         request_json = (project_dir / "request.json").read_text(encoding="utf-8")
-        response_json = (project_dir / "response.json").read_text(encoding="utf-8")
 
-        logger.info("  [Act] 调用 LLM 生成冒烟测试脚本")
-        smoke_path = project_dir / "smoke_test.py"
-        self.llm.generate_python_code(
-            system_prompt=SMOKE_TEST_SYSTEM_PROMPT,
-            user_prompt=SMOKE_TEST_USER_TEMPLATE.format(
-                server_url=server_url,
-                request_json=request_json,
-                response_json=response_json,
-            ),
-            output_path=smoke_path,
-        )
-
-        # ── 8b: 启动服务 ──
+        # ── 8a: 启动服务 ──
         logger.info(f"  [Act] 启动服务 (port={port})")
         server_script = project_dir / "server_refactor.py"
         self._server_proc = subprocess.Popen(
@@ -367,14 +341,14 @@ class Phase2ServiceAgent:
 
         logger.info(f"  [Observe] 服务已启动: {server_url}")
 
-        # ── 8c: 执行冒烟测试 ──
+        # ── 8b: 执行冒烟测试 ──
         try:
             logger.info("  [Act] 执行冒烟测试")
-            executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
-            result = executor.run_python(
-                smoke_path,
-                args=f"--url {server_url}",
-                timeout=120,
+            executor = ShellExecutor(cwd=project_dir)
+            result = executor.run(
+                get_smoke_test_user_template(request_json=request_json,
+                                             server_url=server_url),
+                timeout=600,
             )
 
             if not result.success:

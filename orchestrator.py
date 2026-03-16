@@ -144,7 +144,7 @@ class OrchestratorAgent:
             # 检查点：等待人工确认
             if is_checkpoint and self.config.human_in_the_loop:
                 approved = self._human_checkpoint(step_id, description)
-                if not approved:
+                if not approved:    # TODO: 即使被暂停了，但是后续依然在此停留，重新执行
                     self.result.status = PipelineStatus.PAUSED
                     logger.warning(f"Pipeline 在检查点 {step_id} 被人工暂停")
                     return self.result
