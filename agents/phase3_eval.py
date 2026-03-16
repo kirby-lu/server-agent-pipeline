@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import socket
 import threading
 import time
 from collections import defaultdict
@@ -25,38 +26,49 @@ from utils.state_store import StateStore
 logger = setup_logger("phase3_eval")
 
 
-PRECISION_REFACTOR_SYSTEM = """你是 MLOps 工程师，专注于将本地精度测试迁移为服务测试。
+PRECISION_REFACTOR_SYSTEM = """
+你是 MLOps 工程师，专注于将本地精度测试迁移为服务测试。
 输出完整的 Python 测试脚本，不要任何额外解释。"""
 
-PRECISION_REFACTOR_USER = """将 test_precision.py 中的模型加载、预处理、推理、后处理替换为 HTTP 调用。
+PRECISION_REFACTOR_USER = """
+请作为 Python 后端开发与测试专家，协助我基于现有脚本进行重构，并生成一份新的精度验证脚本。
+### 一、重构目标
+将 `val_precision` 脚本中原有的**本地模型推理链路**，替换为基于 **RESTful API 的远程调用方式**，使其专注于服务精度验证。
 
-原始 test_precision.py：
-```python
-{original_code}
-```
+### 二、重构要求
+#### 1. 模块裁剪
+参考 `server_refactor` 服务脚本，移除 `val_precision` 中与服务端重复的处理逻辑，包括但不限于：
+- 模型加载（`init_model`）
+- 本地预处理
+- 本地推理
+- 推理后处理
 
-single_inference_refactor.py（了解数据格式）：
-```python
-{refactor_code}
-```
+> 目标：脚本职责单一，仅负责数据输入与精度统计，不再承担任何模型推理职能。
 
-request.json 样例：
-```json
-{request_json}
-```
+#### 2. 服务集成
+- 使用 Python `requests` 模块调用远程推理接口
+- 服务地址（`server_url`）：`{server_url}`
+- 请求结构（`request_json`）：`{request_json}`
+- 响应结构（`response_json`）：`{response_json}`
 
-服务地址：{server_url}
+#### 3. 逻辑保留
+必须完整保留以下原有逻辑：
+- 数据集的循环读取流程
+- 最终精度指标的计算逻辑（Precision / Recall / mAP 等）
 
-改造要求：
-1. 删除 init_model() 调用
-2. 将 pre_process + process + post_process 调用链替换为：
-   - 构造 HTTP POST {server_url}/predict 的请求体
-   - 发送请求并解析响应
-3. 保留原有的精度计算逻辑（accuracy/mAP/F1 等指标计算不变）
-4. 添加命令行参数 --url 覆盖服务地址，--timeout 设置请求超时
-5. 输出精度报告到 accuracy_report.json
+#### 4. 输出精简
+- 删除新脚本中所有冗余的中间过程打印（`print`）语句
+- **仅保留最终精度指标的打印与返回**
 
-生成完整的 test_precision_refactor.py 文件。"""
+### 三、参考脚本
+| 脚本名称 | 内容 |
+|---|---|
+| `server_refactor` 服务脚本 | `{server_refactor}` |
+| `val_precision` 精度验证脚本 | `{val_precision}` |
+
+### 四、交付要求
+请输出完整的重构后脚本，并在关键改动处附加注释，说明替换或删除的原因。
+"""
 
 
 @dataclass
@@ -99,37 +111,94 @@ class Phase3EvalAgent:
         if handler is None:
             raise ValueError(f"Phase3 未知步骤: {step_id}")
         return handler()
+    
+    @staticmethod
+    def _wait_for_service(port: int, timeout: int = 60) -> bool:
+        """轮询直到端口可连接"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("localhost", port), timeout=1):
+                    return True
+            except (ConnectionRefusedError, OSError):
+                time.sleep(1)
+        return False
+
 
     # ── 步骤9：精度测试重构 ──────────────────────
 
     def _step09_refactor_precision_test(self) -> dict:
         project_dir = Path(self.state.get_project_dir())
-        precision_test = project_dir / "test_precision.py"
+        precision_test = project_dir / "val_precision.py"
 
         if not precision_test.exists():
-            logger.warning("  test_precision.py 不存在，跳过精度测试重构")
+            logger.warning("  val_precision.py 不存在，跳过精度测试重构")
             return {"precision_test_skipped": True}
+        
+        ip = self.config.server_ip
+        port = self.config.server_port
+        server_url = f"http://{ip}:{port}/infer"
+        # ── 9a: 启动服务 ──
+        logger.info(f"  [Act] 启动服务 ({server_url})")
+        server_script = project_dir / "server_refactor.py"
+        venv_python = self.state.get_venv_python()
+        self._server_proc = subprocess.Popen(
+            [venv_python, str(server_script)],
+            cwd=str(project_dir),
+            env={**__import__("os").environ, "SERVER_PORT": str(port)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
 
-        refactor_code = (project_dir / "single_inference_refactor.py").read_text(encoding="utf-8")
-        original_code = precision_test.read_text(encoding="utf-8")
+        # 等待服务就绪（最多60秒）
+        logger.info("  等待服务启动...")
+        if not self._wait_for_service(port, timeout=60):
+            stdout = self._server_proc.stdout.read(2000).decode(errors="ignore")
+            stderr = self._server_proc.stderr.read(2000).decode(errors="ignore")
+            self._server_proc.kill()
+            raise RuntimeError(
+                f"服务启动超时\nstdout: {stdout}\nstderr: {stderr}"
+            )
+
+        logger.info(f"  [Observe] 服务已启动: {server_url}")
+        
+        # ── 9b: 生成数据集验证脚本 ──
+        # server_url = f"http://localhost:{self.config.server_port}"
+        val_precision = (project_dir / "val_precision.py").read_text(encoding="utf-8")
+        server_refactor = (project_dir / "server_refactor.py").read_text(encoding="utf-8")
         request_json = (project_dir / "request.json").read_text(encoding="utf-8")
-        server_url = f"http://localhost:{self.config.server_port}"
+        response_json = (project_dir / "response.json").read_text(encoding="utf-8")
 
         logger.info("  [Act] 调用 LLM 改造精度测试脚本")
-        output_path = project_dir / "test_precision_refactor.py"
+        output_path = project_dir / "val_precision_refactor.py"
 
         self.llm.generate_python_code(
             system_prompt=PRECISION_REFACTOR_SYSTEM,
             user_prompt=PRECISION_REFACTOR_USER.format(
-                original_code=original_code,
-                refactor_code=refactor_code,
-                request_json=request_json,
+                val_precision = val_precision,
+                request_json = request_json,
+                response_json = response_json, 
                 server_url=server_url,
+                server_refactor = server_refactor
             ),
             output_path=output_path,
         )
 
-        logger.info(f"  [Observe] ✓ test_precision_refactor.py: {output_path}")
+        logger.info(f"  [Observe] ✓ val_precision_refactor.py: {output_path}")
+        
+        # ── 9c: 进行脚本验证 ──
+        logger.info(f"  [Act] 验证服务精度")
+        executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
+        result = executor.run_python(output_path, timeout=300)
+        if not result.success:
+            # 将错误输出上报，供 Orchestrator 决策
+            raise RuntimeError(
+                f"val_precision_refactor.py 执行失败 (code={result.returncode})\n"
+                f"stderr: {result.stderr[-2000:]}\n"
+                f"stdout: {result.stdout[-1000:]}"
+            )
+        logger.info(f"  [Observe] ✓ 验证服务精度完成，服务精度为:{result.stdout[-500:]}")
+        
         return {"precision_test_refactor_path": str(output_path)}
 
     # ── 步骤10：效率测试 ──────────────────────────

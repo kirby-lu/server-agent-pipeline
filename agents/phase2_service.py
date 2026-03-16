@@ -127,7 +127,8 @@ def get_response_json_user_prompt(original_code, req_content):
     
     return RESPONSE_JSON_USER_PROMPT
 
-SERVER_SYSTEM_PROMPT = """你是 FastAPI 专家，将推理函数封装为生产级 HTTP 服务。
+SERVER_SYSTEM_PROMPT = """
+你是 FastAPI 专家，将推理函数封装为生产级 HTTP 服务。
 输出完整的 server_refactor.py 文件，不要有任何额外解释。"""
 
 def get_server_user_prompt(request,response,single_inference_refactor, server, 
