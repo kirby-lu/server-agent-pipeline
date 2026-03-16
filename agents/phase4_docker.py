@@ -73,41 +73,44 @@ server_refactor.py 的主要依赖（从 requirements.txt 提取）：
 API_DOC_SYSTEM = """你是技术文档写作专家，生成清晰规范的 API 接口文档。
 输出 Markdown 格式文档。"""
 
-API_DOC_USER = """根据以下资料，按照《原型服务接口文档》模板生成完整文档。
+API_DOC_USER = """
+Role：你是一位资深的 AI 部署工程师，精通 Linux x86 环境下算法模型的高性能 Python 微服务封装，且擅长编写标准化、规范化的原型服务接口文档。
+ Task：请阅读我提供的代码逻辑，以及 `request.json` / `response.json` 样例文件，按照以下具体要求填充《原型交互接口文档模板》中所有 `$【TODO】` 占位内容（全文字体无需添加背景色）：
 
-request.json：
-```json
-{request_json}
-```
+具体任务要求
+1. 简介与模块定义
+   - 将 `$【TODO:请生成任务类型】` 填充为：{project_name}的中文名。
+   
+2. 接口规范完善（核心重点）
+   - 字段映射：
+     ① 读取指定的 `request.json`（输入字段来源）和 `response.json`（输出字段来源）文件；
+     ② 提取两个文件中的全部字段，整理至结构化表格中；
+     ③ 字段整理规则：
+        - 严格保留所有字段的原始名称，**禁止修改任何字段名称**；
+        - 为每个字段标记“输入/输出”属性：
+          - 若字段同时出现在 `request.json` 和 `response.json` 中，属性标记为“输入/输出”；
+          - 若字段仅出现在 `request.json` 中，属性标记为“输入”；
+          - 若字段仅出现在 `response.json` 中，属性标记为“输出”；
+        - 表格字段排列顺序：优先展示仅“输入”的字段，其次展示仅“输出”的字段，最后展示“输入/输出”的字段；若需按原始文件字段出现顺序排列，需保证“输入在前、输出在后”的核心逻辑；
+     ④ 表格需至少包含“字段名称”“输入/输出属性”两列，确保结构清晰、字段无遗漏。
+   - 样例构造：将request.json和response.json复制到制定位置即可
+   
+3. 部署与镜像规范
+   -按照文档要求，将指定脚本内容复制在对应处即可
+4. 已知信息
+    - 模板信息为：{doc_template}
+    - request.json的内容为{request_json}
+    - response.json的内容为{response_json}
+    - run_load_image.sh内容为：{run_load_image}
+    - run_create_image.sh内容为：{run_create_image}
+    - run_start_server.sh内容为：{run_start_server}
+    - run_stop_server.sh内容为：{run_stop_server}
+总结
+1. 核心角色定位：资深 AI 部署工程师，聚焦 Linux x86 环境下 Python 微服务封装与标准化接口文档编写；
+2. 核心任务：填充接口文档模板，重点完成字段映射表格（严格保名字段、按规则标记属性）、真实场景 JSON 样例、标准化 Docker 部署命令；
+3. 关键约束：字段名称不可修改、Docker 命令需包含端口映射和资源限制、JSON 样例需贴合真实检测场景。
 
-response.json：
-```json
-{response_json}
-```
-
-性能测试报告摘要：
-```json
-{perf_summary}
-```
-
-四个 Docker 运维脚本：
-{docker_scripts_content}
-
-文档模板结构：
-{doc_template}
-
-生成完整的 Markdown 接口文档，要包含：
-1. 服务概述（接口地址、协议、认证方式）
-2. 请求参数表（字段名、类型、必填、说明、示例）
-3. 响应参数表（字段名、类型、说明、示例）
-4. 完整请求示例（curl + Python requests）
-5. 完整响应示例
-6. 镜像加载说明（附脚本参数说明）
-7. 容器创建与启动说明
-8. 服务停止说明
-9. 错误码说明
-10. 性能参考指标"""
-
+"""
 
 class Phase4DockerAgent:
 
@@ -266,43 +269,36 @@ class Phase4DockerAgent:
 
     def _step13_generate_api_doc(self) -> dict:
         project_dir = Path(self.state.get_project_dir())
-
+        project_name = self.config.project_name
         request_json = (project_dir / "request.json").read_text(encoding="utf-8")
         response_json = (project_dir / "response.json").read_text(encoding="utf-8")
 
-        # 性能报告摘要
-        perf_path = project_dir / "perf_report.json"
-        if perf_path.exists():
-            perf_data = json.loads(perf_path.read_text())
-            perf_summary = json.dumps({
-                k: v for k, v in perf_data.items()
-                if k in ("qps", "latency_p50_ms", "latency_p95_ms",
-                         "latency_p99_ms", "cpu_usage_percent", "gpu_usage_percent")
-            }, indent=2)
-        else:
-            perf_summary = "{}"
-
         # Docker 脚本内容
-        scripts = self.state.get("docker_scripts", {})
-        scripts_content = ""
-        for name, path in scripts.items():
-            content = Path(path).read_text(encoding="utf-8") if Path(path).exists() else ""
-            scripts_content += f"\n### {name}\n```bash\n{content}\n```\n"
+        run_load_image = (project_dir / "../" / "run_load_image.sh").read_text(encoding="utf-8")
+        run_create_image = (project_dir /  "../" / "run_create_image.sh").read_text(encoding="utf-8")
+        run_start_server = (project_dir /  "../" / "run_start_server.sh").read_text(encoding="utf-8")
+        run_stop_server = (project_dir /  "../" / "run_stop_server.sh").read_text(encoding="utf-8")
+
+        with open("./templates/原型服务接口文档模板.md", 'r', encoding='utf-8') as f:
+            doc_template = f.read()
 
         logger.info("  [Act] 调用 LLM 生成接口文档")
         doc_content = self.llm.complete(
             system_prompt=API_DOC_SYSTEM,
             user_prompt=API_DOC_USER.format(
-                request_json=request_json,
-                response_json=response_json,
-                perf_summary=perf_summary,
-                docker_scripts_content=scripts_content,
-                doc_template=API_DOC_TEMPLATE,
+                project_name = project_name,
+                request_json = request_json,
+                response_json = response_json,
+                doc_template = doc_template,
+                run_load_image = run_load_image,
+                run_create_image = run_create_image,
+                run_start_server = run_start_server,
+                run_stop_server = run_stop_server
             ),
             max_tokens=4096,
         )
 
-        doc_path = project_dir / "API_DOCUMENT.md"
+        doc_path = project_dir / "原型服务接口文档.md"
         doc_path.write_text(doc_content, encoding="utf-8")
         logger.info(f"  [Observe] ✓ 接口文档: {doc_path}")
 
@@ -371,53 +367,3 @@ CMD ["python", "server_refactor.py"]
             "run_stop_server.sh": "#!/bin/bash\ndocker stop ml_service && echo 'Stopped'\n",
         }
         return defaults.get(name, f"#!/bin/bash\necho '{name} placeholder'\n")
-
-
-# ─────────────────────────────────────────────
-#  接口文档模板
-# ─────────────────────────────────────────────
-
-API_DOC_TEMPLATE = """# 原型服务接口文档
-
-## 1. 服务概述
-| 项目 | 说明 |
-|------|------|
-| 接口地址 | http://HOST:PORT/predict |
-| 请求方式 | POST |
-| Content-Type | application/json |
-
-## 2. 请求参数
-| 字段名 | 类型 | 必填 | 说明 | 示例 |
-|--------|------|------|------|------|
-
-## 3. 响应参数
-| 字段名 | 类型 | 说明 | 示例 |
-|--------|------|------|------|
-
-## 4. 请求示例
-
-### curl
-```bash
-curl -X POST ...
-```
-
-### Python
-```python
-import requests
-...
-```
-
-## 5. 响应示例
-```json
-```
-
-## 6. 部署操作说明
-
-### 6.1 镜像加载
-### 6.2 容器创建
-### 6.3 服务启动
-### 6.4 服务停止
-
-## 7. 错误码
-
-## 8. 性能参考指标"""

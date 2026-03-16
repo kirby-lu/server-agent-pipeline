@@ -84,6 +84,31 @@ REGENERATE_USER_PROMPT = """
     请提供修复后的完整代码。
 """
 
+EXTRACTE_PRECISION_SYSTEM = """
+    你是一个专业的 MLOps 工程师。
+    你的任务是分析所提供内容，提取所有的关于精度的信息。
+    输出严格的 JSON 格式，不要有任何额外文字。
+"""
+
+EXTRACTE_PRECISION_USER="""
+    分析以下{content}的内容，提取所有的关于精度的信息。
+
+    输出 JSON 格式，下面提供了样例，如果还有其他精度名称和数据，请在列表中进行追加：
+    {{
+    "precision_info": [
+        {{
+        "精度名称": "精度结果",
+        }}
+    ],
+    "notes": "其他注意事项"
+    }}
+
+    如果没有需要下载的资源，返回 {{"precision_info": []}}
+                        
+    """
+
+
+
 @dataclass
 class PerformanceReport:
     """性能测试报告"""
@@ -226,9 +251,19 @@ class Phase3EvalAgent:
                     f"stderr: {result.stderr[-2000:]}\n"
                     f"stdout: {result.stdout[-1000:]}"
                 )
-        logger.info(f"  [Observe] ✓ 验证服务精度完成，服务精度为:{result.stdout[-500:]}")
         
-        return {"server_precision": result.stdout[-1000:]}
+        # TODO: 使用大模型只获取精度信息并返回
+        logger.info("  [Act] 调用 LLM 提取精度信息")
+        precision_info = self.llm.generate_json(
+            EXTRACTE_PRECISION_SYSTEM, 
+            EXTRACTE_PRECISION_USER.format(
+                content = result.stdout[-500:]
+            ))
+        
+        precision_info = precision_info.get("precision_info", [])
+        
+        logger.info(f"  [Observe] ✓ 验证服务精度完成，服务精度为:{precision_info}")
+        return {"server_precision": precision_info}
 
     # ── 步骤10：效率测试 ──────────────────────────
 
