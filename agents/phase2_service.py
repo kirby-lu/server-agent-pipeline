@@ -349,13 +349,23 @@ class Phase2ServiceAgent:
         try:
             logger.info("  [Act] 执行冒烟测试")
             executor = ShellExecutor(cwd=project_dir)
+            logger.info(f"  request_json is \n{request_json}")
             result = executor.run(
                 get_smoke_test_user_template(request_json=request_json,
                                              server_url=server_url),
                 timeout=600,
             )
 
-            if not result.success:
+            def is_valid_json(json_str):
+                """判断字符串是否为有效的 JSON"""
+                try:
+                    json.loads(json_str)
+                    return True
+                except json.JSONDecodeError:
+                    return False
+    
+            if not result.success or \
+                    (is_valid_json(result.stdout) and json.loads(result.stdout)["errorCode"]) != 200:
                 raise RuntimeError(
                     f"冒烟测试失败\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
                 )
