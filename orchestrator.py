@@ -125,7 +125,11 @@ class OrchestratorAgent:
 
         self.state.set_pipeline_status(PipelineStatus.RUNNING)
 
-        for step_id, phase, description, is_checkpoint in self.STEPS:
+        # for step_id, phase, description, is_checkpoint in self.STEPS:
+        idx, step_count = 0, len(self.STEPS)
+        while idx < step_count:
+            step_id, phase, description, is_checkpoint = self.STEPS[idx]
+            idx += 1
             # 跳过已成功完成的步骤（支持断点续跑）
             if self.state.get_step_status(step_id) == StepStatus.SUCCESS:
                 logger.info(f"[跳过] {step_id}: {description} (已完成)")
@@ -146,12 +150,16 @@ class OrchestratorAgent:
             # 检查点：等待人工确认
             if is_checkpoint and self.config.human_in_the_loop:
                 approved = self._human_checkpoint(step_id, description)
-                if not approved:    # TODO: 即使被暂停了，但是后续依然在此停留，重新执行
+                print(f"approved = {approved}")
+                if approved in ("n",):
                     self.result.status = PipelineStatus.PAUSED
                     self.state.set_step_status(step_id, PipelineStatus.PAUSED)
-                
                     logger.warning(f"Pipeline 在检查点 {step_id} 被人工暂停")
                     return self.result
+                elif approved in ("r",):
+                    self.state.set_step_status(step_id, PipelineStatus.FAILED)
+                    logger.info(f"  重新处理检查点 {step_id}")
+                    idx -= 1
 
         # 收集所有产出物
         self._collect_results()
@@ -216,19 +224,22 @@ class OrchestratorAgent:
                 print(f"    {k}: {v}")
 
         while True:
-            answer = input("  是否通过此检查点继续执行？[y/n/s(跳过此步)]: ").strip().lower()
+            answer = input("  是否通过此检查点继续执行？[y/n/s(跳过此步)/r(重新处理)]: ").strip().lower()
             if answer in ("y", "yes"):
                 self.state.set_pipeline_status(PipelineStatus.RUNNING)
                 logger.info(f"  检查点 {step_id} 已通过")
-                return True
+                return "y"
             elif answer in ("n", "no"):
                 logger.warning(f"  检查点 {step_id} 被拒绝，Pipeline 暂停")
-                return False
+                return "n"
             elif answer == "s":
                 logger.info(f"  跳过检查点 {step_id}")
-                return True
+                return "s"
+            elif answer == "r":
+                logger.info(f"  重新处理检查点 {step_id}")
+                return "r"
             else:
-                print("  请输入 y / n / s")
+                print("  请输入 y / n / s / r")
 
     # ── 收集产出物 ────────────────────────────────
 
