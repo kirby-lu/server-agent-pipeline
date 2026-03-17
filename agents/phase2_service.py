@@ -85,6 +85,7 @@ def get_request_json_user_prompt(original_code):
                     请在 body 下方进行增量定义,请确保不同变量名的含义不要出现重复，
             - 逻辑闭环：设计的参数不应涵盖原始输入数据的标准化、格式转换等操作的信息 
             - 请求模板：{template},requestId表示每个请求唯一的uuid字符传
+            - 数据准确：请确保body中的resourceUrl等字段的值要修改为与original_code代码中的一致
             - original_code为:{original_code}
     """)
     return REQUEST_JSON_USER_PROMPT
