@@ -150,7 +150,6 @@ class OrchestratorAgent:
             # 检查点：等待人工确认
             if is_checkpoint and self.config.human_in_the_loop:
                 approved = self._human_checkpoint(step_id, description)
-                print(f"approved = {approved}")
                 if approved in ("n",):
                     self.result.status = PipelineStatus.PAUSED
                     self.state.set_step_status(step_id, PipelineStatus.PAUSED)
