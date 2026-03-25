@@ -179,7 +179,7 @@ class RubricLibrary:
             # 检查 post_process 返回 dict（简单启发式）
             checks.append(CheckItem(
                 name="post_process 有 return 语句",
-                passed="def post_process" in code and "return" in code.split("def post_process")[1][:500],
+                passed="def post_process" in code and "return" in code.split("def post_process")[1],
                 detail="post_process 函数体内未找到 return 语句",
             ))
 

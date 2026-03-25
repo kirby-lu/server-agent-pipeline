@@ -1,6 +1,9 @@
 export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
 export ANTHROPIC_API_KEY=sk-5da256b6d34c41dd821b65ef4162ab25
 
+# 杀死占用的服务
+lsof -t -i:8080 | xargs -r kill -9
+
 source .venv/bin/activate
 # 工作目录是work-dir/project-name
 uv run orchestrator_with_critic.py \
