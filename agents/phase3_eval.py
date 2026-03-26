@@ -230,20 +230,6 @@ class Phase3EvalAgent:
         result = executor.run_python(output_path, timeout=300)
         if not result.success:
             logger.info(f"  [Observe] ✖ error is {result.stderr[-2000:]}\n")
-            # TODO: 如果出现问题的话，就再给大模型一次机会，让其重新生成，但是需要将报错信息给他！
-            logger.info("  [Act] 重新调用 LLM 改造精度测试脚本")
-            self.llm.generate_python_code(
-                system_prompt=PRECISION_REFACTOR_SYSTEM,
-                user_prompt=REGENERATE_USER_PROMPT.format(
-                            val_precision = val_precision,
-                            error_info = result.stderr[-2000:]),
-                output_path=output_path,
-            )
-            logger.info(f"  [Observe] ✓ val_precision_refactor.py: {output_path}")
-        
-            logger.info(f"  [Act] 重新验证服务精度")
-            executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
-            result = executor.run_python(output_path, timeout=300)
             if not result.success:
                 # 将错误输出上报，供 Orchestrator 决策
                 raise RuntimeError(

@@ -230,7 +230,7 @@ class CriticOrchestratorAgent(OrchestratorAgent):
             except Exception as e:
                 err_msg = str(e)
                 logger.warning(
-                    f"  ✗ {step_id} 第 {attempt} 次执行失败: {err_msg[:300]}"
+                    f"  ✗ {step_id} 第 {attempt} 次执行失败: {err_msg}"
                 )
                 self.state.set_step_status(step_id, StepStatus.FAILED)
                 # 写入 last_error → 下次重试时 ErrorAwareLLMClient 自动注入
