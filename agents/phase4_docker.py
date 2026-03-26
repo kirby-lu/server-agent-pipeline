@@ -87,17 +87,41 @@ Role：你是一位资深的 AI 部署工程师，精通 Linux x86 环境下算�
      ② 提取两个文件中的全部字段，整理至结构化表格中；
      ③ 字段整理规则：
         - 严格保留所有字段的原始名称，**禁止修改任何字段名称**；
-        - 为每个字段标记“输入/输出”属性：
-          - 若字段同时出现在 `request.json` 和 `response.json` 中，属性标记为“输入/输出”；
-          - 若字段仅出现在 `request.json` 中，属性标记为“输入”；
-          - 若字段仅出现在 `response.json` 中，属性标记为“输出”；
-        - 表格字段排列顺序：优先展示仅“输入”的字段，其次展示仅“输出”的字段，最后展示“输入/输出”的字段；若需按原始文件字段出现顺序排列，需保证“输入在前、输出在后”的核心逻辑；
-     ④ 表格需至少包含“字段名称”“输入/输出属性”两列，确保结构清晰、字段无遗漏。
+        - 为每个字段标记"输入/输出"属性：
+          - 若字段同时出现在 `request.json` 和 `response.json` 中，属性标记为"输入/输出"；
+          - 若字段仅出现在 `request.json` 中，属性标记为"输入"；
+          - 若字段仅出现在 `response.json` 中，属性标记为"输出"；
+        - 表格字段排列顺序：优先展示仅"输入"的字段，其次展示仅"输出"的字段，最后展示"输入/输出"的字段；若需按原始文件字段出现顺序排列，需保证"输入在前、输出在后"的核心逻辑；
+     ④ 表格需至少包含"字段名称""输入/输出属性"两列，确保结构清晰、字段无遗漏。
    - 样例构造：将request.json和response.json复制到制定位置即可
    
 3. 部署与镜像规范
-   -按照文档要求，将指定脚本内容复制在对应处即可
-4. 已知信息
+   - 按照文档要求，将指定脚本内容复制在对应处即可
+
+4. 性能测试章节（# 3. 性能测试）
+   4.1 数据集说明（## 3.1 数据集说明）
+   - 根据 dataset_analysis 中的信息，用自然语言描述数据集特征；
+   - 按数据类型补充对应指标：
+     · 图像：文件数量、总大小、平均分辨率（若有）、格式分布；
+     · 视频：文件数量、总大小、平均分辨率、平均时长；
+     · 音频：文件数量、总大小、平均时长；
+   - 直接用 dataset_analysis 中的 summary 字段作为段落描述，再以列表形式补充具体数据。
+
+   4.2 性能指标（## 3.2 性能指标）
+   - 将 perf_report 中的数据整理为 Markdown 表格，包含以下列：指标名称 | 数值 | 含义说明；
+   - 必须包含的指标及其含义说明：
+     · QPS（每秒请求数）：服务单位时间内处理的请求数量，反映吞吐能力；
+     · P50 延迟：50% 的请求响应时间低于此值，代表典型响应速度；
+     · P95 延迟：95% 的请求响应时间低于此值，反映大多数用户的体验；
+     · P99 延迟：99% 的请求响应时间低于此值，体现极端情况下的性能上限；
+     · 平均延迟：所有请求的平均响应时间；
+     · 错误率：请求失败的比例，反映服务稳定性；
+     · CPU 使用率：压测期间 CPU 的平均占用率；
+     · 内存使用：压测期间内存平均占用量；
+     · GPU 使用率：若有 GPU，填写压测期间 GPU 平均占用率，否则填"不适用"；
+     · GPU 显存：若有 GPU，填写压测期间显存平均占用量，否则填"不适用"。
+
+5. 已知信息
     - 模板信息为：{doc_template}
     - request.json的内容为{request_json}
     - response.json的内容为{response_json}
@@ -105,10 +129,12 @@ Role：你是一位资深的 AI 部署工程师，精通 Linux x86 环境下算�
     - run_create_image.sh内容为：{run_create_image}
     - run_start_server.sh内容为：{run_start_server}
     - run_stop_server.sh内容为：{run_stop_server}
+    - 数据集分析结果（dataset_analysis）：{dataset_analysis}
+    - 性能测试报告（perf_report）：{perf_report}
 总结
 1. 核心角色定位：资深 AI 部署工程师，聚焦 Linux x86 环境下 Python 微服务封装与标准化接口文档编写；
-2. 核心任务：填充接口文档模板，重点完成字段映射表格（严格保名字段、按规则标记属性）、真实场景 JSON 样例、标准化 Docker 部署命令；
-3. 关键约束：字段名称不可修改、Docker 命令需包含端口映射和资源限制、JSON 样例需贴合真实检测场景。
+2. 核心任务：填充接口文档模板，重点完成字段映射表格（严格保名字段、按规则标记属性）、真实场景 JSON 样例、标准化 Docker 部署命令、以及性能测试章节；
+3. 关键约束：字段名称不可修改、Docker 命令需包含端口映射和资源限制、JSON 样例需贴合真实检测场景、性能数据需原样引用不得编造。
 
 """
 
@@ -275,27 +301,64 @@ class Phase4DockerAgent:
 
         # Docker 脚本内容
         run_load_image = (project_dir / "../" / "run_load_image.sh").read_text(encoding="utf-8")
-        run_create_image = (project_dir /  "../" / "run_create_image.sh").read_text(encoding="utf-8")
-        run_start_server = (project_dir /  "../" / "run_start_server.sh").read_text(encoding="utf-8")
-        run_stop_server = (project_dir /  "../" / "run_stop_server.sh").read_text(encoding="utf-8")
+        run_create_image = (project_dir / "../" / "run_create_image.sh").read_text(encoding="utf-8")
+        run_start_server = (project_dir / "../" / "run_start_server.sh").read_text(encoding="utf-8")
+        run_stop_server = (project_dir / "../" / "run_stop_server.sh").read_text(encoding="utf-8")
+
+        # ── 从 StateStore 读取性能报告和数据集分析（step10 写入）────────
+        perf_report = self.state.get("perf_report", {})
+        dataset_analysis = self.state.get("dataset_analysis", {})
+
+        # 若 step10 未执行（被跳过），尝试从 perf_report.json 文件兜底读取
+        if not perf_report:
+            perf_report_path = project_dir / "perf_report.json"
+            if perf_report_path.exists():
+                try:
+                    perf_report = json.loads(perf_report_path.read_text(encoding="utf-8"))
+                    logger.info("  [Observe] 从 perf_report.json 文件读取性能数据")
+                except Exception:
+                    pass
+
+        if perf_report:
+            logger.info("  [Observe] 已获取性能测试数据，将生成性能测试章节")
+        else:
+            logger.warning("  [Observe] 未获取到性能测试数据，性能章节将标注为待补充")
+
+        if dataset_analysis:
+            logger.info(f"  [Observe] 已获取数据集分析：{dataset_analysis.get('dataset_type', '未知')}")
+        else:
+            logger.warning("  [Observe] 未获取到数据集分析，数据集章节将标注为待补充")
 
         with open("./templates/原型服务接口文档模板.md", 'r', encoding='utf-8') as f:
             doc_template = f.read()
 
-        logger.info("  [Act] 调用 LLM 生成接口文档")
+        # 在模板末尾追加性能测试章节占位（LLM 将根据数据填充）
+        doc_template += """
+
+# 3. 性能测试
+## 3.1 数据集说明
+$【TODO：根据 dataset_analysis 填写数据集类型、文件数量、大小、分辨率/时长等特征描述】
+
+## 3.2 性能指标
+$【TODO：将 perf_report 中的 QPS、P50/P95/P99 延迟、平均延迟、错误率、CPU/内存/GPU 使用率整理为表格，并说明每项指标含义】
+"""
+
+        logger.info("  [Act] 调用 LLM 生成接口文档（含性能测试章节）")
         doc_content = self.llm.complete(
             system_prompt=API_DOC_SYSTEM,
             user_prompt=API_DOC_USER.format(
-                project_name = project_name,
-                request_json = request_json,
-                response_json = response_json,
-                doc_template = doc_template,
-                run_load_image = run_load_image,
-                run_create_image = run_create_image,
-                run_start_server = run_start_server,
-                run_stop_server = run_stop_server
+                project_name=project_name,
+                request_json=request_json,
+                response_json=response_json,
+                doc_template=doc_template,
+                run_load_image=run_load_image,
+                run_create_image=run_create_image,
+                run_start_server=run_start_server,
+                run_stop_server=run_stop_server,
+                dataset_analysis=json.dumps(dataset_analysis, ensure_ascii=False, indent=2),
+                perf_report=json.dumps(perf_report, ensure_ascii=False, indent=2),
             ),
-            max_tokens=4096,
+            max_tokens=6000,
         )
 
         doc_path = project_dir / "原型服务接口文档.md"

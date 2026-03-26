@@ -12,7 +12,7 @@ import sys
 import socket
 import threading
 import time
-from collections import defaultdict, Counter
+from collections import defaultdict
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, List
@@ -25,8 +25,6 @@ from utils.state_store import StateStore
 
 logger = setup_logger("phase3_eval")
 
-
-# ── 精度测试 Prompt ────────────────────────────────────────────────
 
 PRECISION_REFACTOR_SYSTEM = """
 你是 MLOps 工程师，专注于将本地精度测试迁移为服务测试。
@@ -92,23 +90,6 @@ EXTRACTE_PRECISION_SYSTEM = """
     输出严格的 JSON 格式，不要有任何额外文字。
 """
 
-EXTRACTE_PRECISION_USER = """
-    分析以下{content}的内容，提取所有的关于精度的信息。
-
-    输出 JSON 格式，下面提供了样例，如果还有其他精度名称和数据，请在列表中进行追加：
-    {{
-    "precision_info": [
-        {{
-        "精度名称": "精度结果",
-        }}
-    ],
-    "notes": "其他注意事项"
-    }}
-
-    如果没有需要下载的资源，返回 {{"precision_info": []}}
-                        
-    """
-
 # ── 效率测试：LLM 依据数据集自动生成压测请求数据 ──────────────────
 
 PERF_REQUEST_GEN_SYSTEM = """
@@ -145,53 +126,23 @@ PERF_REQUEST_GEN_USER = """
   [{{"requestId": "perf-001", "body": {{"resourceUrl": "data/img1.jpg"}}}}, ...]
 """
 
-# ── 数据集分析 Prompt ──────────────────────────────────────────────
+EXTRACTE_PRECISION_USER="""
+    分析以下{content}的内容，提取所有的关于精度的信息。
 
-DATASET_ANALYSIS_SYSTEM = """
-你是一位专业的数据集分析工程师。
-你的任务是分析给定数据集目录下的文件信息，输出结构化的数据集描述。
-输出严格的 JSON 格式，不要有任何额外文字。
-"""
+    输出 JSON 格式，下面提供了样例，如果还有其他精度名称和数据，请在列表中进行追加：
+    {{
+    "precision_info": [
+        {{
+        "精度名称": "精度结果",
+        }}
+    ],
+    "notes": "其他注意事项"
+    }}
 
-DATASET_ANALYSIS_USER = """
-请分析以下数据集采样信息，生成一份结构化的数据集说明，用于填写性能测试报告。
+    如果没有需要下载的资源，返回 {{"precision_info": []}}
+                        
+    """
 
-## 数据集文件采样列表
-```
-{file_samples}
-```
-
-## 文件统计信息
-{file_stats}
-
-## 分析要求
-根据文件后缀和统计信息判断数据集类型，并按对应规则分析：
-
-- 图像数据集（jpg/jpeg/png/bmp/tiff 等）：
-  分析内容：文件总数、总大小、平均文件大小、分辨率分布（若可采样）
-
-- 视频数据集（mp4/avi/mov/mkv 等）：
-  分析内容：文件总数、总大小、平均文件大小、分辨率、平均时长
-
-- 音频数据集（wav/mp3/flac/ogg 等）：
-  分析内容：文件总数、总大小、平均文件大小、平均时长
-
-- 文本/其他数据集：
-  分析内容：文件总数、总大小、格式说明
-
-输出 JSON 格式：
-{{
-    "dataset_type": "图像|视频|音频|文本|混合|未知",
-    "total_files": 0,
-    "total_size_mb": 0.0,
-    "avg_file_size_mb": 0.0,
-    "format_distribution": {{"jpg": 10, "png": 5}},
-    "extra_info": {{
-        "说明字段": "对应值（如分辨率、时长等，视数据类型而定）"
-    }},
-    "summary": "一段自然语言描述，2-3句话概括数据集特征"
-}}
-"""
 
 
 @dataclass
@@ -234,7 +185,7 @@ class Phase3EvalAgent:
         if handler is None:
             raise ValueError(f"Phase3 未知步骤: {step_id}")
         return handler()
-
+    
     @staticmethod
     def _wait_for_service(port: int, timeout: int = 60) -> bool:
         """轮询直到端口可连接"""
@@ -247,6 +198,7 @@ class Phase3EvalAgent:
                 time.sleep(1)
         return False
 
+
     # ── 步骤9：精度测试重构 ──────────────────────
 
     def _step09_refactor_precision_test(self) -> dict:
@@ -256,11 +208,10 @@ class Phase3EvalAgent:
         if not precision_test.exists():
             logger.warning("  val_precision.py 不存在，跳过精度测试重构")
             return {"precision_test_skipped": True}
-
+        
         ip = self.config.server_ip
         port = self.config.server_port
         server_url = f"http://{ip}:{port}/infer"
-
         # ── 9a: 启动服务 ──
         logger.info(f"  [Act] 启动服务 ({server_url})")
         server_script = project_dir / "server_refactor.py"
@@ -284,8 +235,9 @@ class Phase3EvalAgent:
             )
 
         logger.info(f"  [Observe] 服务已启动: {server_url}")
-
+        
         # ── 9b: 生成数据集验证脚本 ──
+        # server_url = f"http://localhost:{self.config.server_port}"
         val_precision = (project_dir / "val_precision.py").read_text(encoding="utf-8")
         server_refactor = (project_dir / "server_refactor.py").read_text(encoding="utf-8")
         request_json = (project_dir / "request.json").read_text(encoding="utf-8")
@@ -297,53 +249,55 @@ class Phase3EvalAgent:
         self.llm.generate_python_code(
             system_prompt=PRECISION_REFACTOR_SYSTEM,
             user_prompt=PRECISION_REFACTOR_USER.format(
-                val_precision=val_precision,
-                request_json=request_json,
-                response_json=response_json,
+                val_precision = val_precision,
+                request_json = request_json,
+                response_json = response_json, 
                 server_url=server_url,
-                server_refactor=server_refactor,
+                server_refactor = server_refactor
             ),
             output_path=output_path,
         )
 
         logger.info(f"  [Observe] ✓ val_precision_refactor.py: {output_path}")
-
+        
         # ── 9c: 进行脚本验证 ──
         logger.info(f"  [Act] 验证服务精度")
         executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
         result = executor.run_python(output_path, timeout=300)
         if not result.success:
             logger.info(f"  [Observe] ✖ error is {result.stderr[-2000:]}\n")
+            # TODO: 如果出现问题的话，就再给大模型一次机会，让其重新生成，但是需要将报错信息给他！
             logger.info("  [Act] 重新调用 LLM 改造精度测试脚本")
             self.llm.generate_python_code(
                 system_prompt=PRECISION_REFACTOR_SYSTEM,
                 user_prompt=REGENERATE_USER_PROMPT.format(
-                    val_precision=val_precision,
-                    error_info=result.stderr[-2000:],
-                ),
+                            val_precision = val_precision,
+                            error_info = result.stderr[-2000:]),
                 output_path=output_path,
             )
             logger.info(f"  [Observe] ✓ val_precision_refactor.py: {output_path}")
-
+        
             logger.info(f"  [Act] 重新验证服务精度")
             executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
             result = executor.run_python(output_path, timeout=300)
             if not result.success:
+                # 将错误输出上报，供 Orchestrator 决策
                 raise RuntimeError(
                     f"val_precision_refactor.py 执行失败 (code={result.returncode})\n"
                     f"stderr: {result.stderr[-2000:]}\n"
                     f"stdout: {result.stdout[-1000:]}"
                 )
-
+        
+        # TODO: 使用大模型只获取精度信息并返回
         logger.info("  [Act] 调用 LLM 提取精度信息")
         precision_info = self.llm.generate_json(
-            EXTRACTE_PRECISION_SYSTEM,
+            EXTRACTE_PRECISION_SYSTEM, 
             EXTRACTE_PRECISION_USER.format(
-                content=result.stdout[-500:]
+                content = result.stdout[-500:]
             ))
-
+        
         precision_info = precision_info.get("precision_info", [])
-
+        
         logger.info(f"  [Observe] ✓ 验证服务精度完成，服务精度为:{precision_info}")
         return {"server_precision": precision_info}
 
@@ -351,8 +305,7 @@ class Phase3EvalAgent:
 
     def _step10_efficiency_test(self) -> dict:
         """
-        启动服务 → LLM 依据数据集生成真实压测请求 → 并发压测 → 采集资源监控
-        → 数据集分析 → 生成报告
+        启动服务 → LLM 依据数据集生成真实压测请求 → 并发压测 → 采集资源监控 → 生成报告
         """
         project_dir = Path(self.state.get_project_dir())
         venv_python = self.state.get_venv_python()
@@ -403,20 +356,12 @@ class Phase3EvalAgent:
             self._print_report(report)
             logger.info(f"  [Observe] ✓ 性能报告: {report_path}")
 
-            # ── 10c: 数据集分析（供接口文档使用）────────────────────
-            logger.info("  [Act] 分析数据集信息")
-            dataset_analysis = self._analyze_dataset(project_dir)
-            logger.info(f"  [Observe] ✓ 数据集分析完成: {dataset_analysis.get('dataset_type', '未知')}")
-
             return {
                 "perf_report_path": str(report_path),
                 "qps": report.qps,
                 "p50_ms": report.latency_p50_ms,
                 "p95_ms": report.latency_p95_ms,
                 "p99_ms": report.latency_p99_ms,
-                # 以下字段供 step13 生成接口文档的性能测试章节使用
-                "perf_report": asdict(report),
-                "dataset_analysis": dataset_analysis,
             }
 
         finally:
@@ -436,11 +381,21 @@ class Phase3EvalAgent:
           2. 读取 request.json 模板和 server_refactor.py 中的 pre_process 函数
           3. 将上述信息拼入 Prompt，让 LLM 生成 JSON 数组
           4. 解析结果并校验，失败时返回空列表（由调用方降级处理）
+
+        Parameters
+        ----------
+        project_dir  : 项目根目录
+        sample_count : 期望 LLM 生成的请求条数
+
+        Returns
+        -------
+        list[dict] — 可直接作为 HTTP 请求体的字典列表；失败时返回 []
         """
         # ── 1. 扫描数据集目录结构 ────────────────────────────────────
         dataset_structure = self._scan_dataset_structure(project_dir)
         if not dataset_structure:
             logger.warning("  [Observe] 未找到数据集目录，LLM 生成请求数据将依赖模板")
+            # 仍然让 LLM 尝试，它可以基于模板字段推断合理的测试值
             dataset_structure = "（未发现数据集目录，请根据 request.json 模板生成合理的测试数据）"
 
         # ── 2. 读取 request.json 模板 ────────────────────────────────
@@ -469,9 +424,11 @@ class Phase3EvalAgent:
             return []
 
         # ── 5. 解析并校验结果 ────────────────────────────────────────
+        # generate_json 返回 dict 或 list；LLM 应输出数组
         if isinstance(result, list):
             data_list = result
         elif isinstance(result, dict):
+            # 兼容 LLM 把数组包在某个 key 下的情况
             for v in result.values():
                 if isinstance(v, list) and len(v) > 0:
                     data_list = v
@@ -482,6 +439,7 @@ class Phase3EvalAgent:
         else:
             return []
 
+        # 过滤非 dict 元素，确保每条都是合法请求体
         valid = [item for item in data_list if isinstance(item, dict)]
         if len(valid) < len(data_list):
             logger.warning(
@@ -496,7 +454,10 @@ class Phase3EvalAgent:
         """
         扫描 project_dir 下常见的数据集子目录，
         返回文件相对路径列表（字符串），供 LLM 选取真实文件名。
+
+        扫描范围：data/、dataset/、datasets/、images/、test/、val/ 等常见命名。
         """
+        # 常见数据集目录名（不区分大小写）
         candidates = [
             "data", "dataset", "datasets",
             "images", "imgs", "image",
@@ -511,9 +472,10 @@ class Phase3EvalAgent:
                     for f in sorted(d.rglob("*"))[:max_files]:
                         if f.is_file():
                             lines.append(str(f.relative_to(project_dir)))
-                    break
+                    break  # 同名只取第一个匹配目录
 
         if not lines:
+            # 兜底：列出 project_dir 第一层所有文件（不递归）
             lines = [
                 str(f.relative_to(project_dir))
                 for f in sorted(project_dir.iterdir())
@@ -544,113 +506,12 @@ class Phase3EvalAgent:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if node.name == "pre_process":
                     lines = source.splitlines()
+                    # 取函数起止行（ast 行号从 1 开始）
                     start = node.lineno - 1
                     end = node.end_lineno  # Python 3.8+
                     return "\n".join(lines[start:end])
 
         return ""
-
-    def _analyze_dataset(self, project_dir: Path) -> dict:
-        """
-        扫描项目下数据集目录，收集文件统计信息，
-        调用 LLM 生成结构化的数据集说明（供接口文档性能章节使用）。
-
-        LLM 失败时返回基于规则统计的降级结果，不影响主流程。
-        """
-        # ── 1. 扫描常见数据集目录 ────────────────────────────────────
-        dataset_dirs = [
-            "data", "dataset", "datasets",
-            "images", "imgs", "image",
-            "test", "val", "validation",
-            "samples", "input", "inputs",
-        ]
-        found_files: list[Path] = []
-        for name in dataset_dirs:
-            for d in (project_dir.iterdir() if project_dir.exists() else []):
-                if d.is_dir() and d.name.lower() == name:
-                    found_files.extend(
-                        f for f in d.rglob("*") if f.is_file()
-                    )
-                    break
-
-        if not found_files:
-            found_files = [f for f in project_dir.iterdir() if f.is_file()]
-
-        if not found_files:
-            logger.warning("  [Observe] 未发现数据集文件，跳过数据集分析")
-            return {"dataset_type": "未知", "summary": "未发现数据集文件"}
-
-        # ── 2. 计算基础统计信息 ──────────────────────────────────────
-        suffix_counter: Counter = Counter()
-        total_size = 0
-        for f in found_files:
-            suffix_counter[f.suffix.lower()] += 1
-            try:
-                total_size += f.stat().st_size
-            except OSError:
-                pass
-
-        total_files = len(found_files)
-        total_size_mb = round(total_size / 1024 / 1024, 2)
-        avg_size_mb = round(total_size_mb / total_files, 3) if total_files else 0
-
-        file_stats = (
-            f"文件总数: {total_files}\n"
-            f"总大小: {total_size_mb} MB\n"
-            f"平均大小: {avg_size_mb} MB\n"
-            f"格式分布: {dict(suffix_counter.most_common(10))}"
-        )
-
-        sample_paths = [
-            str(f.relative_to(project_dir))
-            for f in found_files[:100]
-        ]
-        file_samples = "\n".join(sample_paths)
-
-        # ── 3. 调用 LLM 生成结构化分析 ──────────────────────────────
-        try:
-            analysis = self.llm.generate_json(
-                system_prompt=DATASET_ANALYSIS_SYSTEM,
-                user_prompt=DATASET_ANALYSIS_USER.format(
-                    file_samples=file_samples,
-                    file_stats=file_stats,
-                ),
-            )
-            analysis.setdefault("total_files", total_files)
-            analysis.setdefault("total_size_mb", total_size_mb)
-            analysis.setdefault("avg_file_size_mb", avg_size_mb)
-            analysis.setdefault("format_distribution", dict(suffix_counter.most_common(10)))
-            return analysis
-
-        except Exception as e:
-            logger.warning(f"  [Observe] LLM 数据集分析失败，降级为规则统计: {e}")
-            image_exts = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
-            video_exts = {".mp4", ".avi", ".mov", ".mkv", ".wmv"}
-            audio_exts = {".wav", ".mp3", ".flac", ".ogg", ".aac"}
-            top_exts = set(dict(suffix_counter.most_common(3)).keys())
-
-            if top_exts & image_exts:
-                dtype = "图像"
-            elif top_exts & video_exts:
-                dtype = "视频"
-            elif top_exts & audio_exts:
-                dtype = "音频"
-            else:
-                dtype = "其他"
-
-            return {
-                "dataset_type": dtype,
-                "total_files": total_files,
-                "total_size_mb": total_size_mb,
-                "avg_file_size_mb": avg_size_mb,
-                "format_distribution": dict(suffix_counter.most_common(10)),
-                "extra_info": {},
-                "summary": (
-                    f"数据集共 {total_files} 个文件，"
-                    f"总大小 {total_size_mb} MB，"
-                    f"主要格式：{dict(suffix_counter.most_common(3))}"
-                ),
-            }
 
     def _start_server(self, project_dir: Path, venv_python: str, port: int) -> None:
         logger.info(f"  [Act] 启动推理服务 (port={port})")
@@ -661,6 +522,8 @@ class Phase3EvalAgent:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        # 等待就绪
+        import socket
         deadline = time.time() + 60
         while time.time() < deadline:
             try:
@@ -694,6 +557,7 @@ class Phase3EvalAgent:
         lock = threading.Lock()
         stop_event = threading.Event()
 
+        # 每个 worker 用独立的计数器轮询请求列表，保证多样性
         data_len = len(request_data_list)
 
         # ── 压测工作线程 ──
@@ -734,6 +598,7 @@ class Phase3EvalAgent:
                 while not stop_event.is_set():
                     cpu_samples.append(psutil.cpu_percent(interval=None))
                     mem_samples.append(process.memory_info().rss / 1024 / 1024)
+                    # GPU 监控（可选）
                     if self.config.gpu_available:
                         try:
                             import pynvml
@@ -770,6 +635,7 @@ class Phase3EvalAgent:
 
         elapsed = time.time() - test_start
 
+        # 计算统计
         import statistics
         total_ok = len(latencies)
         total_err = len(errors)
