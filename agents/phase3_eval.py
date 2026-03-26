@@ -90,6 +90,42 @@ EXTRACTE_PRECISION_SYSTEM = """
     输出严格的 JSON 格式，不要有任何额外文字。
 """
 
+# ── 效率测试：LLM 依据数据集自动生成压测请求数据 ──────────────────
+
+PERF_REQUEST_GEN_SYSTEM = """
+你是一位 MLOps 压测工程师。
+你的任务是分析数据集目录结构和请求模板，生成一批真实可用的压测请求体。
+输出严格的 JSON 数组，不要有任何额外文字、注释或 Markdown 代码块。
+"""
+
+PERF_REQUEST_GEN_USER = """
+## 任务
+根据以下信息，生成 {sample_count} 条真实的 HTTP 压测请求体（JSON 数组）。
+
+## 数据集目录结构
+```
+{dataset_structure}
+```
+
+## 请求模板（request.json）
+```json
+{request_template}
+```
+
+## 服务推理代码（server_refactor.py 中的 pre_process 函数，用于理解字段含义）
+```python
+{pre_process_code}
+```
+
+## 生成要求
+- 每条请求体的结构必须与请求模板完全一致（字段名、层级不变）
+- resourceUrl 等文件路径字段，填写数据集目录中真实存在的文件相对路径
+- 从数据集中均匀采样，不要重复使用同一个文件
+- 若数据集文件数量少于 {sample_count}，则允许适量重复，但顺序需打乱
+- 只输出 JSON 数组，格式示例：
+  [{{"requestId": "perf-001", "body": {{"resourceUrl": "data/img1.jpg"}}}}, ...]
+"""
+
 EXTRACTE_PRECISION_USER="""
     分析以下{content}的内容，提取所有的关于精度的信息。
 
@@ -230,6 +266,20 @@ class Phase3EvalAgent:
         result = executor.run_python(output_path, timeout=300)
         if not result.success:
             logger.info(f"  [Observe] ✖ error is {result.stderr[-2000:]}\n")
+            # TODO: 如果出现问题的话，就再给大模型一次机会，让其重新生成，但是需要将报错信息给他！
+            logger.info("  [Act] 重新调用 LLM 改造精度测试脚本")
+            self.llm.generate_python_code(
+                system_prompt=PRECISION_REFACTOR_SYSTEM,
+                user_prompt=REGENERATE_USER_PROMPT.format(
+                            val_precision = val_precision,
+                            error_info = result.stderr[-2000:]),
+                output_path=output_path,
+            )
+            logger.info(f"  [Observe] ✓ val_precision_refactor.py: {output_path}")
+        
+            logger.info(f"  [Act] 重新验证服务精度")
+            executor = ShellExecutor(cwd=project_dir, venv_python=venv_python)
+            result = executor.run_python(output_path, timeout=300)
             if not result.success:
                 # 将错误输出上报，供 Orchestrator 决策
                 raise RuntimeError(
@@ -255,7 +305,7 @@ class Phase3EvalAgent:
 
     def _step10_efficiency_test(self) -> dict:
         """
-        启动服务 → 并发压测 → 采集资源监控 → 生成报告
+        启动服务 → LLM 依据数据集生成真实压测请求 → 并发压测 → 采集资源监控 → 生成报告
         """
         project_dir = Path(self.state.get_project_dir())
         venv_python = self.state.get_venv_python()
@@ -266,13 +316,31 @@ class Phase3EvalAgent:
         self._start_server(project_dir, venv_python, port)
 
         try:
-            request_data = json.loads((project_dir / "request.json").read_text())
+            # ── 10a: LLM 依据数据集自动生成压测请求数据 ──────────────
+            logger.info("  [Act] 调用 LLM 生成压测请求数据")
+            request_data_list = self._llm_generate_request_data_list(
+                project_dir=project_dir,
+                sample_count=50,
+            )
 
-            # 并行：压测 + 资源监控
+            # 若 LLM 生成失败则降级：直接使用 request.json 中的固定数据
+            if not request_data_list:
+                logger.warning(
+                    "  [Observe] LLM 未能生成压测数据，降级使用 request.json 固定数据"
+                )
+                request_data_list = [
+                    json.loads((project_dir / "request.json").read_text())
+                ]
+
+            logger.info(
+                f"  [Observe] 压测请求数据就绪，共 {len(request_data_list)} 条"
+            )
+
+            # ── 10b: 并发压测 + 资源监控 ──────────────────────────────
             logger.info("  [Act] 开始并发压测 + 资源监控")
             report = self._run_load_test(
                 server_url=server_url,
-                request_data=request_data,
+                request_data_list=request_data_list,
                 concurrent_users=10,
                 duration_seconds=30,
             )
@@ -298,6 +366,152 @@ class Phase3EvalAgent:
 
         finally:
             self._stop_server()
+
+    def _llm_generate_request_data_list(
+        self,
+        project_dir: Path,
+        sample_count: int = 50,
+    ) -> list[dict]:
+        """
+        调用 LLM，依据数据集目录结构和 request.json 模板，
+        自动生成一批真实的压测请求体列表。
+
+        流程：
+          1. 扫描 project_dir 下常见的数据集目录，收集文件列表
+          2. 读取 request.json 模板和 server_refactor.py 中的 pre_process 函数
+          3. 将上述信息拼入 Prompt，让 LLM 生成 JSON 数组
+          4. 解析结果并校验，失败时返回空列表（由调用方降级处理）
+
+        Parameters
+        ----------
+        project_dir  : 项目根目录
+        sample_count : 期望 LLM 生成的请求条数
+
+        Returns
+        -------
+        list[dict] — 可直接作为 HTTP 请求体的字典列表；失败时返回 []
+        """
+        # ── 1. 扫描数据集目录结构 ────────────────────────────────────
+        dataset_structure = self._scan_dataset_structure(project_dir)
+        if not dataset_structure:
+            logger.warning("  [Observe] 未找到数据集目录，LLM 生成请求数据将依赖模板")
+            # 仍然让 LLM 尝试，它可以基于模板字段推断合理的测试值
+            dataset_structure = "（未发现数据集目录，请根据 request.json 模板生成合理的测试数据）"
+
+        # ── 2. 读取 request.json 模板 ────────────────────────────────
+        request_template_path = project_dir / "request.json"
+        if not request_template_path.exists():
+            logger.warning("  request.json 不存在，跳过 LLM 生成")
+            return []
+        request_template = request_template_path.read_text(encoding="utf-8")
+
+        # ── 3. 提取 server_refactor.py 中的 pre_process 函数 ─────────
+        pre_process_code = self._extract_pre_process_func(project_dir)
+
+        # ── 4. 调用 LLM 生成请求数据 ────────────────────────────────
+        try:
+            result = self.llm.generate_json(
+                system_prompt=PERF_REQUEST_GEN_SYSTEM,
+                user_prompt=PERF_REQUEST_GEN_USER.format(
+                    sample_count=sample_count,
+                    dataset_structure=dataset_structure,
+                    request_template=request_template,
+                    pre_process_code=pre_process_code,
+                ),
+            )
+        except Exception as e:
+            logger.warning(f"  [Observe] LLM 生成压测数据失败: {e}")
+            return []
+
+        # ── 5. 解析并校验结果 ────────────────────────────────────────
+        # generate_json 返回 dict 或 list；LLM 应输出数组
+        if isinstance(result, list):
+            data_list = result
+        elif isinstance(result, dict):
+            # 兼容 LLM 把数组包在某个 key 下的情况
+            for v in result.values():
+                if isinstance(v, list) and len(v) > 0:
+                    data_list = v
+                    break
+            else:
+                logger.warning(f"  [Observe] LLM 返回结构异常: {list(result.keys())}")
+                return []
+        else:
+            return []
+
+        # 过滤非 dict 元素，确保每条都是合法请求体
+        valid = [item for item in data_list if isinstance(item, dict)]
+        if len(valid) < len(data_list):
+            logger.warning(
+                f"  [Observe] 过滤掉 {len(data_list) - len(valid)} 条非法请求体"
+            )
+
+        logger.info(f"  [Observe] LLM 生成压测请求数据 {len(valid)} 条")
+        return valid
+
+    @staticmethod
+    def _scan_dataset_structure(project_dir: Path, max_files: int = 200) -> str:
+        """
+        扫描 project_dir 下常见的数据集子目录，
+        返回文件相对路径列表（字符串），供 LLM 选取真实文件名。
+
+        扫描范围：data/、dataset/、datasets/、images/、test/、val/ 等常见命名。
+        """
+        # 常见数据集目录名（不区分大小写）
+        candidates = [
+            "data", "dataset", "datasets",
+            "images", "imgs", "image",
+            "test", "val", "validation",
+            "samples", "input", "inputs",
+        ]
+
+        lines: list[str] = []
+        for name in candidates:
+            for d in project_dir.iterdir() if project_dir.exists() else []:
+                if d.is_dir() and d.name.lower() == name:
+                    for f in sorted(d.rglob("*"))[:max_files]:
+                        if f.is_file():
+                            lines.append(str(f.relative_to(project_dir)))
+                    break  # 同名只取第一个匹配目录
+
+        if not lines:
+            # 兜底：列出 project_dir 第一层所有文件（不递归）
+            lines = [
+                str(f.relative_to(project_dir))
+                for f in sorted(project_dir.iterdir())
+                if f.is_file()
+            ][:50]
+
+        return "\n".join(lines[:max_files])
+
+    @staticmethod
+    def _extract_pre_process_func(project_dir: Path) -> str:
+        """
+        从 server_refactor.py 中提取 pre_process 函数的源码，
+        帮助 LLM 理解各字段的实际含义和类型要求。
+        若提取失败则返回空字符串。
+        """
+        server_path = project_dir / "server_refactor.py"
+        if not server_path.exists():
+            return ""
+
+        import ast
+        try:
+            source = server_path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except Exception:
+            return ""
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name == "pre_process":
+                    lines = source.splitlines()
+                    # 取函数起止行（ast 行号从 1 开始）
+                    start = node.lineno - 1
+                    end = node.end_lineno  # Python 3.8+
+                    return "\n".join(lines[start:end])
+
+        return ""
 
     def _start_server(self, project_dir: Path, venv_python: str, port: int) -> None:
         logger.info(f"  [Act] 启动推理服务 (port={port})")
@@ -329,13 +543,13 @@ class Phase3EvalAgent:
     def _run_load_test(
         self,
         server_url: str,
-        request_data: dict,
+        request_data_list: list[dict],
         concurrent_users: int = 10,
         duration_seconds: int = 30,
     ) -> PerformanceReport:
         """
         多线程并发压测：
-        - N 个工作线程持续发 POST /predict
+        - N 个工作线程持续发 POST /infer，从 request_data_list 中轮询取请求体
         - 1 个监控线程采集 CPU/GPU 资源
         """
         latencies: List[float] = []
@@ -343,14 +557,20 @@ class Phase3EvalAgent:
         lock = threading.Lock()
         stop_event = threading.Event()
 
+        # 每个 worker 用独立的计数器轮询请求列表，保证多样性
+        data_len = len(request_data_list)
+
         # ── 压测工作线程 ──
-        def worker():
+        def worker(worker_idx: int):
             session = requests.Session()
+            call_idx = worker_idx  # 各 worker 从不同位置起步，错开请求
             while not stop_event.is_set():
+                request_data = request_data_list[call_idx % data_len]
+                call_idx += concurrent_users  # 步进 = 并发数，避免多 worker 重复同一条
                 start = time.time()
                 try:
                     resp = session.post(
-                        f"{server_url}/predict",
+                        f"{server_url}/infer",
                         json=request_data,
                         timeout=30,
                     )
@@ -395,7 +615,10 @@ class Phase3EvalAgent:
                 logger.warning("  psutil 未安装，资源监控不可用")
 
         # 启动线程
-        workers = [threading.Thread(target=worker, daemon=True) for _ in range(concurrent_users)]
+        workers = [
+            threading.Thread(target=worker, args=(i,), daemon=True)
+            for i in range(concurrent_users)
+        ]
         monitor_thread = threading.Thread(target=monitor, daemon=True)
 
         test_start = time.time()
