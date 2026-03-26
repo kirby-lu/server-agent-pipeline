@@ -338,7 +338,6 @@ class Phase2ServiceAgent:
         try:
             logger.info("  [Act] 执行冒烟测试")
             executor = ShellExecutor(cwd=project_dir)
-            logger.info(f"  request_json is \n{request_json}")
             result = executor.run(
                 SMOKE_TEST_USER_TEMPLATE.format(
                     server_url=server_url,

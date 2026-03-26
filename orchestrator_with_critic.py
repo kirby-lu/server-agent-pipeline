@@ -320,20 +320,20 @@ if __name__ == "__main__":
     parser.add_argument("--no-human",      action="store_true")
     parser.add_argument("--docker-image",  default="")
     parser.add_argument(
-        "--max-revisions", default=2, type=int,
-        help="Critic Agent 最大修改轮数（默认 2）"
+        "--max-revisions", default=3, type=int,
+        help="Critic Agent 最大修改轮数（默认 3）"
     )
     parser.add_argument(
         "--no-inject-code", action="store_true",
         help="禁用代码注入（仅注入错误信息，恢复旧行为）"
     )
     parser.add_argument(
-        "--max-code-length", default=6000, type=int,
-        help="代码注入最大字符数（所有文件合计，默认 6000）"
+        "--max-code-length", default=60000, type=int,
+        help="代码注入最大字符数（所有文件合计，默认 60000）"
     )
     parser.add_argument(
-        "--max-error-length", default=3000, type=int,
-        help="错误信息注入最大字符数（默认 3000）"
+        "--max-error-length", default=30000, type=int,
+        help="错误信息注入最大字符数（默认 30000）"
     )
     args = parser.parse_args()
 
