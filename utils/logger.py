@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -16,26 +17,109 @@ from typing import Any, Optional
 #  日志
 # ─────────────────────────────────────────────
 
+# ANSI 颜色代码
+COLOR_RESET = "\033[0m"
+COLOR_BOLD = "\033[1m"
+# 前景色
+COLOR_BLACK = "\033[30m"
+COLOR_RED = "\033[31m"
+COLOR_GREEN = "\033[32m"
+COLOR_YELLOW = "\033[33m"
+COLOR_BLUE = "\033[34m"
+COLOR_MAGENTA = "\033[35m"
+COLOR_CYAN = "\033[36m"
+COLOR_WHITE = "\033[37m"
+# 亮色
+COLOR_BRIGHT_RED = "\033[91m"
+COLOR_BRIGHT_GREEN = "\033[92m"
+COLOR_BRIGHT_YELLOW = "\033[93m"
+COLOR_BRIGHT_BLUE = "\033[94m"
+COLOR_BRIGHT_MAGENTA = "\033[95m"
+COLOR_BRIGHT_CYAN = "\033[96m"
+COLOR_BRIGHT_WHITE = "\033[97m"
+COLOR_256_TEAL = "\033[38;5;30m"      # 蓝绿/鸭绿
+COLOR_256_ORANGE = "\033[38;5;208m"   # 橙色
+COLOR_256_PURPLE = "\033[38;5;129m"   # 紫色
+
+# Logger 名称到颜色的映射
+LOG_COLORS = {
+    # Phase agents
+    "phase1_env": COLOR_256_TEAL,   # 蓝绿/鸭绿
+    "phase2_service": COLOR_BRIGHT_GREEN, # 绿色
+    "phase3_eval": COLOR_CYAN,            # 青色（暗）
+    "phase4_docker": COLOR_256_ORANGE,   # 橙色
+    # LLM 相关
+    "llm_client": COLOR_BLUE,        # 蓝色
+    "error_aware_llm": COLOR_BRIGHT_YELLOW, # 黄色
+    # 协调器
+    "orchestrator": COLOR_BRIGHT_BLUE,      # 蓝色 
+    "orchestrator_critic": COLOR_MAGENTA,   # 洋红
+    "critic_agent": COLOR_256_PURPLE,      # 紫色
+    # 工具类
+    "shell_executor": COLOR_WHITE,
+    "service_utils": COLOR_WHITE,
+    # 默认颜色
+    "default": COLOR_WHITE,
+}
+
+# 日志级别颜色
+LEVEL_COLORS = {
+    logging.DEBUG: COLOR_BLUE,
+    logging.INFO: COLOR_GREEN,
+    logging.WARNING: COLOR_YELLOW,
+    logging.ERROR: COLOR_RED,
+    logging.CRITICAL: COLOR_BRIGHT_RED,
+}
+
+
+class ColorFormatter(logging.Formatter):
+    """带颜色的控制台日志格式化器"""
+
+    def format(self, record):
+        # 获取 logger 名称对应的颜色
+        name_color = LOG_COLORS.get(record.name, LOG_COLORS["default"])
+        # 获取日志级别颜色
+        level_color = LEVEL_COLORS.get(record.levelno, COLOR_WHITE)
+
+        # 创建带颜色的格式字符串
+        fmt = (
+            f"{COLOR_BOLD}{COLOR_WHITE}%(asctime)s{COLOR_RESET}  "
+            f"{name_color}%(name)-20s{COLOR_RESET}  "
+            f"{level_color}%(levelname)-8s{COLOR_RESET}  "
+            f"{COLOR_WHITE}%(message)s{COLOR_RESET}"
+        )
+
+        formatter = logging.Formatter(fmt, datefmt="%H:%M:%S")
+        return formatter.format(record)
+
+
 def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
     logger.setLevel(level)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s  %(name)-20s  %(levelname)-8s  %(message)s",
-        datefmt="%H:%M:%S"
-    ))
-    logger.addHandler(handler)
 
-    # 同时写文件
+    # 控制台 handler，根据 NO_COLOR 环境变量决定是否带颜色
+    console_handler = logging.StreamHandler(sys.stdout)
+    if os.environ.get("NO_COLOR"):
+        # 用户明确要求无颜色
+        console_handler.setFormatter(logging.Formatter(
+            "%(asctime)s  %(name)-20s  %(levelname)-8s  %(message)s",
+            datefmt="%H:%M:%S"
+        ))
+    else:
+        # 默认使用颜色
+        console_handler.setFormatter(ColorFormatter())
+    logger.addHandler(console_handler)
+
+    # 同时写文件（无颜色）
     log_dir = Path("./logs")
     log_dir.mkdir(parents=True, exist_ok=True)
-    fh = logging.FileHandler(log_dir / f"{name}.log", encoding="utf-8")
-    fh.setFormatter(logging.Formatter(
+    file_handler = logging.FileHandler(log_dir / f"{name}.log", encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter(
         "%(asctime)s  %(name)s  %(levelname)s  %(message)s"
     ))
-    logger.addHandler(fh)
+    logger.addHandler(file_handler)
     return logger
 
 
