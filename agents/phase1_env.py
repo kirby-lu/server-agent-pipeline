@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from tools.shell_executor import ShellExecutor, UVManager
-from utils.logger import setup_logger
-from utils.logger import LLMClient
+from utils.logger import setup_logger, LLMClient
 from utils.state_store import StateStore
+from prompts.phase1_prompts import RESOURCE_DOWNLOAD_SYSTEM, RESOURCE_DOWNLOAD_USER
 
 logger = setup_logger("phase1_env")
 
@@ -136,33 +136,11 @@ class Phase1EnvAgent:
         readme_content = readme_path.read_text(encoding="utf-8", errors="ignore")
         logger.info("  [Act] 调用 LLM 解析 README，提取资源下载信息")
 
-        system_prompt = """你是一个专业的 MLOps 工程师。
-                            你的任务是分析 README.md，提取所有需要下载或需要拷贝的资源（模型权重、数据集、预训练文件等）。
-                            输出严格的 JSON 格式，不要有任何额外文字。"""
-        user_prompt = f"""分析以下 README.md，提取所有需要下载的资源信息。
-                        README 内容：
-                        ```
-                        {readme_content[:8000]}
-                        ```
-
-                        输出 JSON 格式：
-                        {{
-                        "resources": [
-                            {{
-                            "name": "资源名称",
-                            "url": "下载地址（http/https/wget/curl/cp等命令）",
-                            "local_path": "README 中指定的本地保存路径（相对于项目根目录）",
-                            "type": "weights|dataset|config|other",
-                            "download_command": "完整的下载命令（使用 wget 或 curl）"
-                            }}
-                        ],
-                        "notes": "其他注意事项"
-                        }}
-
-                        如果没有需要下载的资源，返回 {{"resources": [], "notes": "no downloads required"}}"""
-
         try:
-            resources_info = self.llm.generate_json(system_prompt, user_prompt)
+            resources_info = self.llm.generate_json(
+                RESOURCE_DOWNLOAD_SYSTEM,
+                RESOURCE_DOWNLOAD_USER.format(readme_content=readme_content[:8000])
+            )
         except Exception as e:
             logger.warning(f"  LLM 解析 README 失败: {e}，跳过资源下载")
             raise RuntimeError(f"资源下载失败，具体原因为:{str(e)}")    # 通过抛出异常来停止后续任务
