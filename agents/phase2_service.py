@@ -156,7 +156,7 @@ class Phase2ServiceAgent:
         self.llm.generate_python_code(
             system_prompt=SERVER_SYSTEM,
             user_prompt=SERVER_USER.format(
-                ip="localhost",
+                ip=self.config.server_ip,
                 port=self.config.server_port,
                 server_interface="/infer",
                 request=req_content,
@@ -182,7 +182,7 @@ class Phase2ServiceAgent:
         request_json = (project_dir / "request.json").read_text(encoding="utf-8")
 
         # 使用 ServiceManager 管理服务
-        service_mgr = ServiceManager(project_dir, venv_python, port)
+        service_mgr = ServiceManager(project_dir, venv_python, port, host=ip)
         service_mgr.start()
 
         try:

@@ -34,10 +34,11 @@ def wait_for_service(port: int, timeout: int = 60, host: str = "localhost") -> b
 class ServiceManager:
     """服务进程管理器"""
 
-    def __init__(self, project_dir: Path, venv_python: str, port: int):
+    def __init__(self, project_dir: Path, venv_python: str, port: int, host: str = "localhost"):
         self.project_dir = project_dir
         self.venv_python = venv_python
         self.port = port
+        self.host = host
         self._server_proc: Optional[subprocess.Popen] = None
 
     def start(self, script_name: str = "server_refactor.py", wait_ready: bool = True) -> None:
@@ -60,14 +61,14 @@ class ServiceManager:
 
         if wait_ready:
             logger.info("  等待服务启动...")
-            if not wait_for_service(self.port, timeout=60):
+            if not wait_for_service(self.port, timeout=60, host=self.host):
                 stdout = self._server_proc.stdout.read(2000).decode(errors="ignore")
                 stderr = self._server_proc.stderr.read(2000).decode(errors="ignore")
                 self._server_proc.kill()
                 raise RuntimeError(
                     f"服务启动超时\nstdout: {stdout}\nstderr: {stderr}"
                 )
-            logger.info(f"  [Observe] 服务已启动: http://localhost:{self.port}")
+            logger.info(f"  [Observe] 服务已启动: http://{self.host}:{self.port}")
 
     def stop(self) -> None:
         """停止服务"""

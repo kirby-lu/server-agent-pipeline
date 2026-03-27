@@ -118,6 +118,7 @@ class Phase4DockerAgent:
         project_dir = Path(self.state.get_project_dir())
         executor = ShellExecutor(cwd=project_dir)
         scripts = self.state.get("docker_scripts", {})
+        server_ip = self.config.server_ip
 
         # 1. 构建镜像（如果没有 tar 包，直接 docker build）
         dockerfile = project_dir / "Dockerfile"
@@ -154,14 +155,14 @@ class Phase4DockerAgent:
         # 4. 等待服务健康
         logger.info("  等待容器服务就绪...")
         port = self.config.server_port
-        if not self._wait_for_port(port, timeout=90):
+        if not self._wait_for_port(port, timeout=90, host=server_ip):
             logs = executor.run(f"docker logs {self.container_name} --tail 50")
             raise RuntimeError(f"容器服务启动超时\n日志:\n{logs.stdout}")
 
         # 5. 验证 /health 接口
         import requests as req
         try:
-            resp = req.get(f"http://localhost:{port}/health", timeout=10)
+            resp = req.get(f"http://{server_ip}:{port}/health", timeout=10)
             if resp.status_code != 200:
                 raise RuntimeError(f"/health 返回 {resp.status_code}: {resp.text}")
             logger.info(f"  [Observe] ✓ 容器服务健康: {resp.json()}")
@@ -278,12 +279,13 @@ CMD ["python", "server_refactor.py"]
         (project_dir / "Dockerfile").write_text(dockerfile, encoding="utf-8")
         logger.info("  自动生成 Dockerfile")
 
-    @staticmethod
-    def _wait_for_port(port: int, timeout: int = 90) -> bool:
+    def _wait_for_port(self, port: int, timeout: int = 90, host: str = None) -> bool:
+        if host is None:
+            host = self.config.server_ip
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                with socket.create_connection(("localhost", port), timeout=1):
+                with socket.create_connection((host, port), timeout=1):
                     return True
             except (ConnectionRefusedError, OSError):
                 time.sleep(2)

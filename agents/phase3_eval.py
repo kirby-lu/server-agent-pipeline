@@ -74,13 +74,14 @@ class Phase3EvalAgent:
             raise ValueError(f"Phase3 未知步骤: {step_id}")
         return handler()
 
-    @staticmethod
-    def _wait_for_service(port: int, timeout: int = 60) -> bool:
+    def _wait_for_service(self, port: int, timeout: int = 60, host: str = None) -> bool:
         """轮询直到端口可连接"""
+        if host is None:
+            host = self.config.server_ip
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                with socket.create_connection(("localhost", port), timeout=1):
+                with socket.create_connection((host, port), timeout=1):
                     return True
             except (ConnectionRefusedError, OSError):
                 time.sleep(1)
@@ -114,7 +115,7 @@ class Phase3EvalAgent:
 
         # 等待服务就绪（最多60秒）
         logger.info("  等待服务启动...")
-        if not self._wait_for_service(port, timeout=60):
+        if not self._wait_for_service(port, timeout=60, host=ip):
             stdout = self._server_proc.stdout.read(2000).decode(errors="ignore")
             stderr = self._server_proc.stderr.read(2000).decode(errors="ignore")
             self._server_proc.kill()
@@ -195,11 +196,12 @@ class Phase3EvalAgent:
         """
         project_dir = Path(self.state.get_project_dir())
         venv_python = self.state.get_venv_python()
+        ip = self.config.server_ip
         port = self.config.server_port
-        server_url = f"http://localhost:{port}"
+        server_url = f"http://{ip}:{port}"
 
         # 启动服务
-        self._start_server(project_dir, venv_python, port)
+        self._start_server(project_dir, venv_python, port, host=ip)
 
         try:
             # ── 10a: LLM 依据数据集自动生成压测请求数据 ──────────────
@@ -491,7 +493,7 @@ class Phase3EvalAgent:
                 ),
             }
 
-    def _start_server(self, project_dir: Path, venv_python: str, port: int) -> None:
+    def _start_server(self, project_dir: Path, venv_python: str, port: int, host: str = None) -> None:
         logger.info(f"  [Act] 启动推理服务 (port={port})")
         self._server_proc = subprocess.Popen(
             [venv_python, str(project_dir / "server_refactor.py")],
@@ -500,10 +502,12 @@ class Phase3EvalAgent:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        if host is None:
+            host = self.config.server_ip
         deadline = time.time() + 60
         while time.time() < deadline:
             try:
-                with socket.create_connection(("localhost", port), timeout=1):
+                with socket.create_connection((host, port), timeout=1):
                     logger.info("  服务就绪")
                     return
             except (ConnectionRefusedError, OSError):
