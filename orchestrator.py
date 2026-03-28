@@ -21,6 +21,7 @@ from agents.phase3_eval import Phase3EvalAgent
 from agents.phase4_docker import Phase4DockerAgent
 from utils.state_store import StateStore, StepStatus
 from utils.logger import setup_logger
+from utils.progress_bar import ProgressBar
 
 logger = setup_logger("orchestrator")
 
@@ -125,14 +126,22 @@ class OrchestratorAgent:
 
         self.state.set_pipeline_status(PipelineStatus.RUNNING)
 
+        # 初始化进度条
+        step_descriptions = [desc for _, _, desc, _ in self.STEPS]
+        progress_bar = ProgressBar(total_steps=len(self.STEPS), step_descriptions=step_descriptions)
+        progress_bar.update(-1, "starting")  # 初始显示0%进度
+
         # for step_id, phase, description, is_checkpoint in self.STEPS:
         idx, step_count = 0, len(self.STEPS)
         while idx < step_count:
             step_id, phase, description, is_checkpoint = self.STEPS[idx]
             idx += 1
+
             # 跳过已成功完成的步骤（支持断点续跑）
             if self.state.get_step_status(step_id) == StepStatus.SUCCESS:
                 logger.info(f"[跳过] {step_id}: {description} (已完成)")
+                # 更新进度条（步骤已完成）
+                progress_bar.update(idx - 1, step_id)  # 当前步骤索引 = idx - 1 (因为idx已经+=1)
                 continue
 
             logger.info(f"\n{'─'*50}")
@@ -140,7 +149,10 @@ class OrchestratorAgent:
 
             success = self._execute_step_with_retry(step_id, phase, description)    # TODO：需要将上一顿的报错信息加入到prompt中
 
-            if not success:
+            if success:
+                # 步骤成功，更新进度条
+                progress_bar.update(idx - 1, step_id)  # 当前步骤索引 = idx - 1 (因为idx已经+=1)
+            else:
                 self.result.status = PipelineStatus.FAILED
                 self.result.error = f"{step_id} 执行失败，已超过最大重试次数"
                 self.state.set_pipeline_status(PipelineStatus.FAILED)
@@ -162,6 +174,9 @@ class OrchestratorAgent:
 
         # 收集所有产出物
         self._collect_results()
+        # 进度条完成
+        last_step_id = self.STEPS[-1][0]  # 获取最后一个步骤的ID
+        progress_bar.complete(last_step_id)
         self.result.status = PipelineStatus.SUCCESS
         self.state.set_pipeline_status(PipelineStatus.SUCCESS)
         logger.info("\n" + "=" * 60)

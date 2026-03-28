@@ -654,7 +654,7 @@ class Phase3EvalAgent:
     @staticmethod
     def _print_report(r: PerformanceReport) -> None:
         print("\n  ┌─────────────────────────────────────────┐")
-        print(f"  │  性能测试报告                              │")
+        print(f"  │  性能测试报告                            │")
         print("  ├─────────────────────────────────────────┤")
         print(f"  │  QPS:          {r.qps:>8.1f} req/s           │")
         print(f"  │  延迟 P50:      {r.latency_p50_ms:>8.1f} ms             │")
