@@ -40,6 +40,8 @@ COLOR_BRIGHT_WHITE = "\033[97m"
 COLOR_256_TEAL = "\033[38;5;30m"      # 蓝绿/鸭绿
 COLOR_256_ORANGE = "\033[38;5;208m"   # 橙色
 COLOR_256_PURPLE = "\033[38;5;129m"   # 紫色
+COLOR_256_GREY = "\033[38;5;244m"
+COLOR_256_LAVENDER = "\033[38;5;146m"
 
 # Logger 名称到颜色的映射
 LOG_COLORS = {
@@ -56,8 +58,8 @@ LOG_COLORS = {
     "orchestrator_critic": COLOR_MAGENTA,   # 洋红
     "critic_agent": COLOR_256_PURPLE,      # 紫色
     # 工具类
-    "shell_executor": COLOR_WHITE,
-    "service_utils": COLOR_WHITE,
+    "shell_executor": COLOR_256_GREY,       # 暗草色
+    "service_utils": COLOR_256_LAVENDER,    # 浅紫灰
     # 默认颜色
     "default": COLOR_WHITE,
 }
