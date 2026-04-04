@@ -17,6 +17,7 @@ Task：请阅读我提供的代码逻辑，以及 `request.json` / `response.jso
      ③ 字段整理规则：
         - 严格保留所有字段的原始名称，**禁止修改任何字段名称**；
         - 为每个字段标记"输入/输出"属性
+   - 服务接口说明：在请求样例前添加一行，说明完整的服务接口地址：{server_url}
    - 样例构造：将request.json和response.json复制到指定位置即可
 
 3. 部署与镜像规范
@@ -39,4 +40,5 @@ Task：请阅读我提供的代码逻辑，以及 `request.json` / `response.jso
     - run_start_server.sh内容为：{run_start_server}
     - run_stop_server.sh内容为：{run_stop_server}
     - 数据集分析结果（dataset_analysis）：{dataset_analysis}
-    - 性能测试报告（perf_report）：{perf_report}"""
+    - 性能测试报告（perf_report）：{perf_report}
+    - 服务接口地址：{server_url}"""

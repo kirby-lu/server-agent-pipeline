@@ -17,6 +17,7 @@ Critic Agent — 自动化阶段评审与修改指令生成
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -262,10 +263,16 @@ class RubricLibrary:
                 detail="未找到 FastAPI 导入",
             ))
 
+            # 获取接口路径（如果状态中存在）
+            server_interface = state.get("server_interface", "/infer")
+            # 使用 logging 模块获取 logger，避免静态方法中的变量作用域问题
+            import logging
+            logging.getLogger("critic_agent").debug(f"  [Critic] step_07 检查接口路径: {server_interface}")
+
             checks.append(CheckItem(
-                name="包含推理接口路由 /infer",
-                passed="/infer" in code,
-                detail="未找到 /infer 路由定义",
+                name=f"包含推理接口路由 {server_interface}",
+                passed=server_interface in code,
+                detail=f"未找到 {server_interface} 路由定义",
             ))
 
             checks.append(CheckItem(
@@ -620,8 +627,25 @@ class CriticAgent:
         # step_07 相关
         if "FastAPI 框架" in name:
             return "重新生成 server_refactor.py，必须使用 FastAPI 框架（from fastapi import FastAPI）。"
-        if "/infer 路由" in name:
-            return "在 server_refactor.py 中添加 POST /infer 路由。"
+        if "包含推理接口路由" in name:
+            # 从name中提取接口路径，格式为"包含推理接口路由 /some/path"
+            # 更健壮的正则表达式，处理可能的中文空格等
+            match = re.search(r'包含推理接口路由\s+([^\s—]+)', name)
+            if match:
+                interface_path = match.group(1)
+                # 确保接口路径以斜杠开头
+                if not interface_path.startswith("/"):
+                    interface_path = "/" + interface_path
+                return f"在 server_refactor.py 中添加 POST {interface_path} 路由。"
+            else:
+                # 兜底：尝试从detail中提取或使用通用消息
+                if "未找到" in detail and "路由" in detail:
+                    # detail格式："未找到 /some/path 路由定义"
+                    detail_match = re.search(r'未找到\s+([^\s]+)\s+路由', detail)
+                    if detail_match:
+                        interface_path = detail_match.group(1)
+                        return f"在 server_refactor.py 中添加 POST {interface_path} 路由。"
+                return "在 server_refactor.py 中添加正确的 POST 路由接口。"
         if "语法合法" in name:
             return f"修复 server_refactor.py 中的语法错误: {detail}"
 

@@ -6,6 +6,7 @@ Phase 2 Sub-Agent — 服务生成
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,8 @@ from prompts.phase2_prompts import (
     JSON_SYSTEM, REQUEST_JSON_USER, RESPONSE_JSON_USER,
     REQUEST_TEMPLATE, RESPONSE_TEMPLATE,
     SERVER_SYSTEM, SERVER_USER,
-    SMOKE_TEST_SYSTEM, SMOKE_TEST_USER
+    SMOKE_TEST_SYSTEM, SMOKE_TEST_USER,
+    INTERFACE_INFER_SYSTEM, INTERFACE_INFER_USER
 )
 
 logger = setup_logger("phase2_service")
@@ -40,6 +42,7 @@ class Phase2ServiceAgent:
         dispatch = {
             "step_05": self._step05_refactor_code,
             "step_06": self._step06_generate_json_samples,
+            "step_06b": self._step06b_infer_interface_path,  # 新增步骤
             "step_07": self._step07_build_server,
             "step_08": self._step08_smoke_test,
         }
@@ -99,18 +102,16 @@ class Phase2ServiceAgent:
     def _step06_generate_json_samples(self) -> dict:
         """LLM 根据重构代码生成 request.json 和 response.json"""
         project_dir = Path(self.state.get_project_dir())
-        refactor_code = (project_dir / "single_inference_refactor.py").read_text(encoding="utf-8")
-
         # 生成 request.json
         logger.info("  [Act] 生成 request.json")
         # single_inference_refactor = project_dir / "single_inference_refactor.py"
-        original_code = (project_dir / "single_inference_refactor.py").read_text(encoding="utf-8")
+        refactor_code = (project_dir / "single_inference_refactor.py").read_text(encoding="utf-8")
         req_path = project_dir / "request.json"
         req_result = self.llm.generate_json(
             system_prompt=JSON_SYSTEM,
             user_prompt=REQUEST_JSON_USER.format(
                 request_template=REQUEST_TEMPLATE,
-                original_code=original_code,
+                original_code=refactor_code,
             ),
             output_path=req_path,
         )
@@ -123,7 +124,7 @@ class Phase2ServiceAgent:
             system_prompt=JSON_SYSTEM,
             user_prompt=RESPONSE_JSON_USER.format(
                 response_template=RESPONSE_TEMPLATE,
-                original_code=original_code,
+                original_code=refactor_code,
                 req_content=req_content,
             ),
             output_path=resp_path,
@@ -137,6 +138,63 @@ class Phase2ServiceAgent:
             "response_json_path": str(resp_path),
             "response_json_data": resp_result,
         }
+
+    # ── 步骤6b：推断接口路径 ──────────────────────
+
+    def _step06b_infer_interface_path(self) -> dict:
+        """LLM 从重构代码中推断接口路径"""
+        project_dir = Path(self.state.get_project_dir())
+        refactor_code = (project_dir / "single_inference_refactor.py").read_text(encoding="utf-8")
+
+        logger.info("  [Act] 调用 LLM 推断接口路径")
+
+        try:
+            # 调用 LLM 分析代码并推断接口路径
+            interface = self.llm.complete(
+                system_prompt=INTERFACE_INFER_SYSTEM,
+                user_prompt=INTERFACE_INFER_USER.format(refactor_code=refactor_code),
+            )
+
+            # 清理和验证接口路径
+            interface = self._validate_interface_path(interface)
+
+            # 存储到状态中
+            self.state.set("server_interface", interface)
+
+            logger.info(f"  [Observe] ✓ 推断接口路径: {interface}")
+
+            return {
+                "interface_inferred": True,
+                "server_interface": interface,
+            }
+        except Exception as e:
+            logger.warning(f"接口路径推断失败，使用默认值 /infer: {e}")
+            self.state.set("server_interface", "/infer")
+            return {
+                "interface_inferred": False,
+                "server_interface": "/infer",
+                "error": str(e),
+            }
+
+    def _validate_interface_path(self, path: str) -> str:
+        """验证和清理接口路径"""
+        # 去除首尾空格
+        path = path.strip()
+
+        # 去除可能的代码块标记
+        if path.startswith("```"):
+            lines = path.split("\n")
+            if len(lines) > 1:
+                path = lines[1].strip()
+
+        # 确保以斜杠开头
+        if not path.startswith("/"):
+            path = "/" + path
+
+        # 移除多余空格和非法字符
+        path = re.sub(r"\s+", "", path)
+
+        return path
 
     # ── 步骤7：生成 FastAPI 服务 ─────────────────
 
@@ -152,13 +210,16 @@ class Phase2ServiceAgent:
         resp_content = resp_path.read_text(encoding="utf-8")
         inference_code = (project_dir / "single_inference_refactor.py").read_text(encoding="utf-8")
         server_code = Path("./templates/server.py").read_text(encoding="utf-8")
-        
+
+        # 从状态中获取接口路径，默认为 /infer
+        server_interface = self.state.get("server_interface", "/infer")
+
         self.llm.generate_python_code(
             system_prompt=SERVER_SYSTEM,
             user_prompt=SERVER_USER.format(
                 ip=self.config.server_ip,
                 port=self.config.server_port,
-                server_interface="/infer",
+                server_interface=server_interface,  # 使用动态接口路径
                 request=req_content,
                 response=resp_content,
                 single_inference_refactor=inference_code,
@@ -178,7 +239,9 @@ class Phase2ServiceAgent:
         venv_python = self.state.get_venv_python()
         ip = self.config.server_ip
         port = self.config.server_port
-        server_url = f"http://{ip}:{port}/infer"
+        # 从状态中获取接口路径，默认为 /infer
+        server_interface = self.state.get("server_interface", "/infer")
+        server_url = f"http://{ip}:{port}{server_interface}"
         request_json = (project_dir / "request.json").read_text(encoding="utf-8")
 
         # 使用 ServiceManager 管理服务

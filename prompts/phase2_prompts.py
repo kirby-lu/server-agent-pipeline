@@ -95,3 +95,23 @@ SMOKE_TEST_SYSTEM = """你是 QA 工程师，专门编写 HTTP 服务的冒烟�
 SMOKE_TEST_USER = """curl -X POST "{server_url}" \\
     -H "Content-Type: application/json" \\
     -d '{request_data}'"""
+
+INTERFACE_INFER_SYSTEM = """你是 API 设计专家，擅长从代码中推断合适的 RESTful 接口路径。
+根据提供的推理代码，分析其功能并建议一个语义化的接口路径。
+只输出接口路径字符串，不要任何解释，不要 JSON 格式，不要 Markdown 代码块。"""
+
+INTERFACE_INFER_USER = """请分析以下推理代码的功能，并建议一个合适的 RESTful API 接口路径。
+
+推理代码：
+```python
+{refactor_code}
+```
+
+分析要求：
+1. 重点分析 process 函数的功能：输入是什么？输出是什么？实现什么任务？
+2. 考虑常见的 RESTful 命名约定
+3. 路径应该简洁、语义化、符合功能描述
+4. 使用小写字母和连字符（如 /image-classify, /text-summarize）
+5. 避免使用通用名称如 /infer, /predict
+
+请输出最适合的接口路径（以斜杠开头）："""

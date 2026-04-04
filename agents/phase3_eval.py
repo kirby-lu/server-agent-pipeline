@@ -99,7 +99,9 @@ class Phase3EvalAgent:
 
         ip = self.config.server_ip
         port = self.config.server_port
-        server_url = f"http://{ip}:{port}/infer"
+        # 从状态中获取接口路径，默认为 /infer
+        server_interface = self.state.get("server_interface", "/infer")
+        server_url = f"http://{ip}:{port}{server_interface}"
 
         # ── 9a: 启动服务 ──
         logger.info(f"  [Act] 启动服务 ({server_url})")
@@ -198,7 +200,9 @@ class Phase3EvalAgent:
         venv_python = self.state.get_venv_python()
         ip = self.config.server_ip
         port = self.config.server_port
-        server_url = f"http://{ip}:{port}"
+        # 从状态中获取接口路径，默认为 /infer
+        server_interface = self.state.get("server_interface", "/infer")
+        server_url = f"http://{ip}:{port}{server_interface}"
 
         # 启动服务
         self._start_server(project_dir, venv_python, port, host=ip)
@@ -529,7 +533,7 @@ class Phase3EvalAgent:
     ) -> PerformanceReport:
         """
         多线程并发压测：
-        - N 个工作线程持续发 POST /infer，从 request_data_list 中轮询取请求体
+        - N 个工作线程持续发 POST 请求，从 request_data_list 中轮询取请求体
         - 1 个监控线程采集 CPU/GPU 资源
         """
         latencies: List[float] = []
@@ -549,7 +553,7 @@ class Phase3EvalAgent:
                 start = time.time()
                 try:
                     resp = session.post(
-                        f"{server_url}/infer",
+                        server_url,
                         json=request_data,
                         timeout=30,
                     )

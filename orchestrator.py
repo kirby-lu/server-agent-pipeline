@@ -89,6 +89,7 @@ class OrchestratorAgent:
         ("step_04", 1, "运行 single_inference.py 验证原型", False),      # ← 检查点
         ("step_05", 2, "LLM 重构为四个标准函数",              False),     # ← 检查点
         ("step_06", 2, "LLM 生成 request/response.json",   False),     # ← 检查点
+        ("step_06b", 2, "LLM 推断服务接口路径",             False),     # 新增步骤
         ("step_07", 2, "LLM 融合生成 server_refactor.py",  False),
         ("step_08", 2, "自动冒烟测试",                      False),   # ← 检查点
         ("step_09", 3, "LLM 改造精度测试脚本",              False),

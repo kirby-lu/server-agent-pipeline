@@ -189,6 +189,13 @@ class Phase4DockerAgent:
         run_start_server = (project_dir / "../" / "run_start_server.sh").read_text(encoding="utf-8")
         run_stop_server = (project_dir / "../" / "run_stop_server.sh").read_text(encoding="utf-8")
 
+        # 构建服务接口地址
+        server_ip = self.config.server_ip
+        server_port = self.config.server_port
+        server_interface = self.state.get("server_interface", "/infer")
+        server_url = f"http://{server_ip}:{server_port}{server_interface}"
+        logger.info(f"  [Observe] 服务接口地址: {server_url}")
+
         # ── 从 StateStore 读取性能报告和数据集分析（step10 写入）────────
         perf_report = self.state.get("perf_report", {})
         dataset_analysis = self.state.get("dataset_analysis", {})
@@ -235,6 +242,7 @@ $【TODO：将 perf_report 中的 QPS、P50/P95/P99 延迟、平均延迟、错�
                 request_json=request_json,
                 response_json=response_json,
                 doc_template=doc_template,
+                server_url=server_url,
                 run_load_image=run_load_image,
                 run_create_image=run_create_image,
                 run_start_server=run_start_server,

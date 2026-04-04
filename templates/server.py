@@ -45,7 +45,7 @@ def startup_event():
 
 # 核心推理接口（统一接口路径、请求方式，便于标准化调用）
 @app.post(
-    "/infer",
+    "{server_interface}",
     response_model=InferenceResponse,
     summary="推理服务核心接口",
     description="接收标准化请求参数，执行推理流程，返回格式化响应结果"
